@@ -276,24 +276,6 @@
   backdrop-filter: blur(4px);
 }
 
-.material-symbols-outlined {
-  font-family: "Material Symbols Outlined";
-  font-weight: 400;
-  font-style: normal;
-  font-size: inherit;
-  display: inline-block;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
-  font-feature-settings: "liga";
-  -webkit-font-feature-settings: "liga";
-  -webkit-font-smoothing: antialiased;
-  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 48;
-}
-
 .hero-gradient {
   position: absolute;
   left: 50%;
@@ -369,12 +351,12 @@
   box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25);
 }
 
-.scroll-button .material-symbols-outlined {
+.scroll-button .scroll-icon {
   font-size: 1.5rem;
   transition: transform 0.3s ease;
 }
 
-.scroll-button:hover .material-symbols-outlined {
+.scroll-button:hover .scroll-icon {
   transform: translateY(2px);
 }
 

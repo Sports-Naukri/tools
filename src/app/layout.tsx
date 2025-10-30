@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -112,6 +114,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} hero-bg bg-background text-foreground antialiased overflow-x-hidden font-sans text-gray-800`}
       >
         {children}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

@@ -9,13 +9,18 @@ type HeroSectionProps = {
 
 export function HeroSection({ onScrollClick }: HeroSectionProps) {
   return (
-    <section className="hero-section relative flex min-h-[calc(100dvh-4rem)] items-center overflow-hidden">
+    <section className="hero-section relative flex min-h-[calc(100vh-4rem)] items-center overflow-hidden">
       <div className="container mx-auto px-4 py-24 sm:px-6 sm:py-32 lg:px-8">
         <div className="relative z-10 mx-auto max-w-4xl text-center">
           <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1 text-sm font-semibold text-primary shadow-sm backdrop-blur">
             New for 2025
             <span className="inline-flex text-base" aria-hidden="true">
-              <Image src="sparkles.svg" alt="sparkles" width={15} height={15} />
+              <Image
+                src="/sparkles.svg"
+                alt="sparkles"
+                width={15}
+                height={15}
+              />
             </span>
           </div>
           <h1 className="mt-8 text-4xl font-black text-gray-900 sm:text-5xl md:text-6xl lg:text-7xl">

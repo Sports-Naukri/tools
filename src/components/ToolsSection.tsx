@@ -149,8 +149,7 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
                     alt={tool.image.alt}
                     fill
                     sizes="(min-width: 768px) 50vw, 100vw"
-                    className="object-cover"
-                    objectPosition="top"
+                    className="object-cover object-top"
                     priority={index === 0}
                   />
                 </div>

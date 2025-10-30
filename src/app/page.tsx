@@ -25,12 +25,7 @@ type Tool = {
   };
 };
 
-const navLinks: NavLink[] = [
-  { label: "Solutions", href: "#tools" },
-  { label: "Playbooks", href: "#" },
-  { label: "Insights", href: "#" },
-  { label: "Partners", href: "#" },
-];
+const navLinks: NavLink[] = [{ label: "Solutions", href: "#tools" }];
 
 const tools: Tool[] = [
   {
@@ -92,7 +87,9 @@ export default function Home() {
 
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
-    if (isMenuOpen) {
+    const shouldLockScroll = isMenuOpen && window.innerWidth < 768;
+
+    if (shouldLockScroll) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = originalOverflow;
@@ -133,7 +130,7 @@ export default function Home() {
 
   const headerCta = useMemo(
     () => (
-      <button className="md:inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary transition-transform duration-200 hover:text-primary-foreground hidden">
+      <button className="hidden items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary transition-transform duration-200 hover:text-primary-foreground md:inline-flex">
         <span className="inline-flex text-base" aria-hidden="true">
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -164,10 +161,10 @@ export default function Home() {
         cta={headerCta}
       />
       <main
-        className={`relative isolate flex-1 pt-16 transition-transform duration-300 ease-in-out transform-gpu ${
+        className={`relative isolate flex-1 pt-16 transform-gpu transition-transform duration-300 ease-in-out md:transition-[margin,transform,filter] ${
           isMenuOpen
-            ? "md:translate-x-0 translate-x-[80%] blur-sm"
-            : "filter-none"
+            ? "translate-x-[80%] blur-sm md:translate-x-0 md:blur-none md:filter-none md:ml-80"
+            : "translate-x-0 md:ml-0 filter-none"
         }`}
         style={{ willChange: "transform" }}
       >

@@ -130,57 +130,73 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
           </p>
         </div>
         <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 md:grid-cols-2">
-          {tools.map((tool, index) => (
-            <div
-              key={tool.title}
-              ref={setCardRef(index)}
-              className="tool-card card-glow group glassmorphic-card flex flex-col rounded-2xl p-8 transition-transform duration-500 ease-out hover:-translate-y-2"
-            >
-              <div className="grow">
-                <div className="group-hover:bg-primary/20 group-hover:scale-110 mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20 transition-all duration-300 overflow-clip">
-                  <span
-                    className="inline-flex text-4xl text-primary"
-                    aria-hidden="true"
-                  >
-                    <Image
-                      src={tool.image.src}
-                      alt={tool.image.alt}
-                      width={70}
-                      height={70}
-                    />
-                  </span>
-                </div>
-                <h3 className="mb-4 text-3xl font-bold text-card-foreground">
-                  {tool.title}
-                </h3>
-                <p className="mb-8 leading-relaxed text-gray-600">
-                  {tool.description}
-                </p>
-              </div>
-              <Link
-                className="relative inline-flex w-full transform items-center justify-center overflow-hidden rounded-lg bg-primary px-6 py-3 text-base font-semibold text-primary-foreground transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-primary/30 sm:w-auto"
-                href={tool.cta.href}
-                target="_blank"
-                rel="noopener noreferrer"
+          {tools.map((tool, index) => {
+            const words = tool.description.split(" ");
+            const shortDescription =
+              words.length > 18
+                ? `${words.slice(0, 18).join(" ")}…`
+                : tool.description;
+
+            return (
+              <div
+                key={tool.title}
+                ref={setCardRef(index)}
+                className="tool-card group flex flex-col overflow-hidden rounded-3xl border border-border/40 bg-white shadow-sm transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-md"
               >
-                <span>{tool.cta.label}</span>
-                <span
-                  className="ml-2 inline-flex text-xl transition-transform duration-300 group-hover:translate-x-1"
-                  aria-hidden="true"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    height="24px"
-                    viewBox="0 -960 960 960"
-                    width="24px"
-                    fill="#FFFFFF"
+                <div className="relative h-64 w-full overflow-hidden bg-linear-to-br from-primary/10 via-primary/5 to-transparent">
+                  <Image
+                    src={tool.image.src}
+                    alt={tool.image.alt}
+                    fill
+                    sizes="(min-width: 768px) 50vw, 100vw"
+                    className="object-cover"
+                    objectPosition="top"
+                    priority={index === 0}
+                  />
+                </div>
+                <div className="flex flex-1 flex-col gap-4 px-6 py-6">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900">
+                      {tool.title}
+                    </h3>
+                    <p
+                      className="mt-2 text-sm leading-6 text-gray-600"
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 1,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {shortDescription}
+                    </p>
+                  </div>
+                  <Link
+                    className="group/cta inline-flex items-center gap-2 text-sm font-semibold text-primary transition-colors duration-200 hover:text-primary/80"
+                    href={tool.cta.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    <path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z" />
-                  </svg>
-                </span>
-              </Link>
-            </div>
-          ))}
+                    <span>{tool.cta.label}</span>
+                    <span
+                      className="inline-flex transition-transform duration-200 group-hover/cta:translate-x-1"
+                      aria-hidden="true"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        height="18"
+                        viewBox="0 -960 960 960"
+                        width="18"
+                        fill="currentColor"
+                      >
+                        <path d="M536-600 352-784l56-56 320 320-320 320-56-56 184-184H160v-80h376Z" />
+                      </svg>
+                    </span>
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div className="mt-24 text-center">
           <div className="inline-block rounded-full border border-border px-6 py-3 bg-secondary shadow-sm transition-shadow hover:shadow-md">

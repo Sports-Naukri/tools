@@ -392,3 +392,9 @@
 .tools-section {
   background-color: #f4f2ff;
 }
+
+@media (max-width: 767px) {
+  .scroll-button {
+    display: none;
+  }
+}

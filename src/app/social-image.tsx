@@ -10,7 +10,7 @@ export const size = {
 export const contentType = "image/png";
 export const runtime = "nodejs";
 
-const backgroundColor = "#f6f2ff";
+const backgroundColor = "#ffffff";
 
 const cedoraData = readFileSync(
   join(process.cwd(), "public", "Cedora-BoldItalic.otf")

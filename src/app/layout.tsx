@@ -64,7 +64,7 @@ export const metadata: Metadata = {
     locale: "en_US",
     images: [
       {
-        url: `${siteUrl}/opengraph-image.png`,
+        url: `${siteUrl}/opengraph-image`,
         width: 1200,
         height: 630,
         alt: `${siteName} hero banner`,
@@ -77,7 +77,7 @@ export const metadata: Metadata = {
     description: siteDescription,
     site: "@sportsnaukri",
     creator: "@sportsnaukri",
-    images: [`${siteUrl}/twitter-image.png`],
+    images: [`${siteUrl}/twitter-image`],
   },
   robots: {
     index: true,

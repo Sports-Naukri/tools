@@ -91,7 +91,7 @@ export function Header({
                 <span
                   className={`${cedora.className} text-lg font-semibold tracking-tight`}
                 >
-                  SportsNaukri Tools
+                  SportsNaukri <span className="text-[#6d28d9]">Tools</span>
                 </span>
               </Link>
               <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-primary md:hidden">
@@ -117,32 +117,32 @@ export function Header({
               aria-expanded={isMenuOpen}
               aria-label={isMenuOpen ? "Close navigation" : "Open navigation"}
               onClick={onToggleMenu}
-              className="inline-flex items-center justify-center rounded-full border border-gray-400 p-2 transition hover:border-primary/40 hover:text-primary"
+              className="group inline-flex items-center justify-center rounded-full border border-gray-400 p-2 transition"
             >
               <span className="inline-flex text-2xl" aria-hidden="true">
-                {isMenuOpen ? (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    height="24px"
-                    viewBox="0 -960 960 960"
-                    width="24px"
-                    fill="#9CA3AF"
-                    className="hover:fill-gray-600"
-                  >
-                    <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z" />
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    height="24px"
-                    viewBox="0 -960 960 960"
-                    width="24px"
-                    fill="#9CA3AF"
-                    className="hover:fill-gray-600"
-                  >
-                    <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z" />
-                  </svg>
-                )}
+              {isMenuOpen ? (
+                <svg
+                xmlns="http://www.w3.org/2000/svg"
+                height="24px"
+                viewBox="0 -960 960 960"
+                width="24px"
+                fill="#9CA3AF"
+                className="group-hover:fill-gray-600"
+                >
+                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z" />
+                </svg>
+              ) : (
+                <svg
+                xmlns="http://www.w3.org/2000/svg"
+                height="24px"
+                viewBox="0 -960 960 960"
+                width="24px"
+                fill="#9CA3AF"
+                className="group-hover:fill-gray-600"
+                >
+                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z" />
+                </svg>
+              )}
               </span>
             </button>
           </div>

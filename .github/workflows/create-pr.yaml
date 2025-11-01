@@ -1,0 +1,189 @@
+name: Create Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: "Source branch (e.g., development)"
+        required: true
+        default: "development"
+        type: string
+      target_branch:
+        description: "Target branch (e.g., main)"
+        required: true
+        default: "main"
+        type: string
+      pr_title:
+        description: "Pull Request title"
+        required: false
+        default: "🚀 Deploy: Development to Production"
+        type: string
+
+jobs:
+  create-pr:
+    name: Create Pull Request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_branch }}
+
+      - name: Check branches exist
+        run: |
+          git fetch origin ${{ inputs.source_branch }}
+          git fetch origin ${{ inputs.target_branch }}
+
+          if ! git show-ref --verify --quiet refs/remotes/origin/${{ inputs.source_branch }}; then
+            echo "❌ Source branch '${{ inputs.source_branch }}' does not exist"
+            exit 1
+          fi
+
+          if ! git show-ref --verify --quiet refs/remotes/origin/${{ inputs.target_branch }}; then
+            echo "❌ Target branch '${{ inputs.target_branch }}' does not exist"
+            exit 1
+          fi
+
+          echo "✅ Both branches exist"
+
+      - name: Get commit information
+        id: commits
+        run: |
+          # Get commits between target and source
+          COMMITS=$(git log origin/${{ inputs.target_branch }}..origin/${{ inputs.source_branch }} --oneline --no-merges)
+          COMMIT_COUNT=$(echo "$COMMITS" | wc -l)
+
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+
+          # Save commits to file for body
+          echo "$COMMITS" > commits.txt
+
+      - name: Check if PR already exists
+        id: check-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_EXISTS=$(gh pr list \
+            --head ${{ inputs.source_branch }} \
+            --base ${{ inputs.target_branch }} \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -z "$PR_EXISTS" ]; then
+            echo "pr_exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No existing PR found"
+          else
+            echo "pr_exists=true" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_EXISTS" >> $GITHUB_OUTPUT
+            echo "ℹ️ Found existing PR #$PR_EXISTS"
+          fi
+
+      - name: Create Pull Request
+        if: steps.check-pr.outputs.pr_exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Read commits
+          COMMITS=$(cat commits.txt)
+
+          # Create PR body
+          cat > pr_body.md << 'EOF'
+          ## 🎯 Release Pull Request
+
+          This PR merges changes from `${{ inputs.source_branch }}` to `${{ inputs.target_branch }}`.
+
+          ### 📊 Summary
+          - **Source**: `${{ inputs.source_branch }}`
+          - **Target**: `${{ inputs.target_branch }}`
+          - **Commits**: ${{ steps.commits.outputs.commit_count }}
+          - **Created**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ### 📝 Commits Included
+          ```
+          $COMMITS
+          ```
+
+          ### ✅ Pre-Merge Checklist
+          - [ ] All tests passing
+          - [ ] Code review completed
+          - [ ] Staging deployment verified
+          - [ ] No breaking changes
+          - [ ] Documentation updated (if needed)
+          - [ ] Changelog updated (if applicable)
+
+          ### 🚀 Post-Merge Actions
+          After merging, the following will happen automatically:
+          - ✅ Production deployment to Vercel
+          - ✅ GitHub release creation (if tagged)
+          - ✅ Notification to team
+
+          ### 🔍 Review Guidelines
+          1. Check all modified files
+          2. Verify staging deployment works correctly
+          3. Ensure no sensitive data is exposed
+          4. Confirm version numbers are updated
+          5. Review security implications
+
+          ---
+          **Created by**: GitHub Actions (Manual Trigger)
+          **Workflow**: Create Release PR
+          **Triggered by**: @${{ github.actor }}
+          EOF
+
+          # Create the PR
+          PR_URL=$(gh pr create \
+            --title "${{ inputs.pr_title }}" \
+            --body-file pr_body.md \
+            --base ${{ inputs.target_branch }} \
+            --head ${{ inputs.source_branch }})
+
+          echo "✅ Pull Request created: $PR_URL"
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+
+      - name: Update existing PR
+        if: steps.check-pr.outputs.pr_exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Read commits
+          COMMITS=$(cat commits.txt)
+
+          # Add comment to existing PR
+          gh pr comment ${{ steps.check-pr.outputs.pr_number }} \
+            --body "## 🔄 PR Update Triggered
+
+          This PR was updated manually via workflow.
+
+          **Updated by**: @${{ github.actor }}
+          **Timestamp**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **New commits**: ${{ steps.commits.outputs.commit_count }}
+
+          ### Recent commits:
+          \`\`\`
+          $COMMITS
+          \`\`\`
+
+          Please review the latest changes before merging."
+
+          echo "✅ Comment added to existing PR #${{ steps.check-pr.outputs.pr_number }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "# 📋 PR Creation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check-pr.outputs.pr_exists }}" == "false" ]; then
+            echo "✅ **New PR created successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "- Source: \`${{ inputs.source_branch }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Target: \`${{ inputs.target_branch }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Commits: ${{ steps.commits.outputs.commit_count }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ **PR already exists**" >> $GITHUB_STEP_SUMMARY
+            echo "- PR Number: #${{ steps.check-pr.outputs.pr_number }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Comment added with latest updates" >> $GITHUB_STEP_SUMMARY
+          fi

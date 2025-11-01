@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+export const revalidate = 3600;
+
 const siteUrl = "https://tools.sportsnaukri.com";
 
 export default function sitemap(): MetadataRoute.Sitemap {

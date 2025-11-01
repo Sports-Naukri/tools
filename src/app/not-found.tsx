@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+export const revalidate = 3600;
+
 export default function NotFound() {
   return (
     <div className="relative isolate flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-6 py-24 text-center sm:px-8">

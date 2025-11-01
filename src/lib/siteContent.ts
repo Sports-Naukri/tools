@@ -28,7 +28,13 @@ export type Tool = {
 };
 
 export const getSiteContent = cache(() => {
-  const navLinks: NavLink[] = [{ label: "Solutions", href: "#tools" }];
+  const navLinks: NavLink[] = [
+    { label: "Solutions", href: "#tools" },
+    { label: "Not Found", href: "/_not-found" },
+    { label: "OpenGraph Image", href: "/opengraph-image" },
+    { label: "Sitemap", href: "/sitemap.xml" },
+    { label: "Twitter Image", href: "/twitter-image" },
+  ];
 
   const tools: Tool[] = [
     {

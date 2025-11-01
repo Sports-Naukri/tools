@@ -1,0 +1,59 @@
+NOTICE
+
+SportsNaukri Tools
+Copyright © 2024-present SportsNaukri. All Rights Reserved.
+
+This software is the proprietary property of SportsNaukri.
+
+================================================================================
+
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+This product includes software developed by third parties under their respective
+licenses. The following components are used in this project:
+
+Next.js - Copyright (c) Vercel, Inc. - MIT License
+React - Copyright (c) Meta Platforms, Inc. - MIT License
+Tailwind CSS - Copyright (c) Tailwind Labs, Inc. - MIT License
+TypeScript - Copyright (c) Microsoft Corporation - Apache License 2.0
+Vercel Analytics - Copyright (c) Vercel, Inc. - MIT License
+
+For complete license information of third-party components, please refer to
+the package.json file and individual package licenses in the node_modules
+directory.
+
+================================================================================
+
+FONTS AND ASSETS
+
+Google Fonts (Inter) - Licensed under the Open Font License
+Custom Fonts (Cedora) - Licensed for use in this project
+Icons - Material Symbols (Apache License 2.0)
+
+================================================================================
+
+TRADEMARK NOTICE
+
+SportsNaukri, the SportsNaukri logo, and all related marks are trademarks or
+registered trademarks of SportsNaukri. All other trademarks are the property
+of their respective owners.
+
+================================================================================
+
+CONTACT INFORMATION
+
+For questions regarding licensing, copyright, or intellectual property:
+
+SportsNaukri
+Email: connect@sportsnaukri.com
+Website: https://sportsnaukri.com
+
+================================================================================
+
+AUTO-UPDATING COPYRIGHT YEAR
+
+The copyright notice "2024-present" automatically encompasses all years from
+2024 through the current calendar year, ensuring continuous legal protection
+without requiring manual annual updates to the copyright statement.
+
+Last Updated: November 2025

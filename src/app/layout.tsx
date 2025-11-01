@@ -1,3 +1,12 @@
+/**
+ * Copyright © 2024-present SportsNaukri. All Rights Reserved.
+ *
+ * This file is part of the SportsNaukri Tools application.
+ * Unauthorized copying, distribution, or use is strictly prohibited.
+ *
+ * @see LICENSE file in the root directory for full license information.
+ */
+
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";

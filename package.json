@@ -18,7 +18,15 @@
   "dependencies": {
     "@vercel/analytics": "^1.5.0",
     "@vercel/speed-insights": "^1.2.0",
+    "@ai-sdk/openai": "^0.0.45",
+    "@vercel/blob": "^0.25.0",
+    "ai": "^3.2.32",
+    "clsx": "^2.1.1",
+    "dexie": "^4.0.7",
+    "lucide-react": "^0.471.0",
+    "nanoid": "^5.0.7",
     "picomatch": "4.0.3",
+    "zod": "^3.24.4",
     "next": "16.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0"

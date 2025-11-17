@@ -1,0 +1,40 @@
+export const DAILY_CHAT_LIMIT = 5;
+export const MESSAGES_PER_CHAT_LIMIT = 10;
+export const CHAT_TTL_SECONDS = 86_400; // 24 hours
+
+export type ChatModel = {
+  id: string;
+  name: string;
+  description: string;
+  isEnabled: boolean;
+};
+
+export const CHAT_MODELS: ChatModel[] = [
+  {
+    id: "gpt-4o-mini",
+    name: "ChatGPT Flash",
+    description: "Fast, lower-cost responses",
+    isEnabled: true,
+  },
+  {
+    id: "gpt-4.1-mini",
+    name: "ChatGPT Lite",
+    description: "Balanced speed and quality",
+    isEnabled: true,
+  },
+  {
+    id: "gpt-4.1",
+    name: "ChatGPT Pro",
+    description: "Locked placeholder for future tier",
+    isEnabled: false,
+  },
+  {
+    id: "gpt-o4-mini",
+    name: "Omni Mini",
+    description: "Locked placeholder for future tier",
+    isEnabled: false,
+  },
+];
+
+export const DEFAULT_CHAT_MODEL_ID = CHAT_MODELS.find((model) => model.isEnabled)?.id ??
+  "gpt-4o-mini";

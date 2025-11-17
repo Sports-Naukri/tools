@@ -1,1 +1,12 @@
 declare module "*.css";
+
+declare namespace NodeJS {
+	interface ProcessEnv {
+		OPENAI_API_KEY?: string;
+		KV_REST_API_URL?: string;
+		KV_REST_API_TOKEN?: string;
+		KV_REST_API_READ_ONLY_TOKEN?: string;
+		BLOB_READ_WRITE_TOKEN?: string;
+		NEXT_PUBLIC_BLOB_BASE_URL?: string;
+	}
+}

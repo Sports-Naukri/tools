@@ -43,6 +43,11 @@ class ChatDatabase extends Dexie {
 
 export const chatDb = new ChatDatabase();
 
+export async function createConversation(conversation: StoredConversation) {
+  await chatDb.conversations.add(conversation);
+  return conversation;
+}
+
 export async function upsertConversation(conversation: StoredConversation) {
   await chatDb.conversations.put(conversation);
   return conversation;
@@ -71,8 +76,21 @@ export async function listConversations(limit = 20) {
     .toArray();
 }
 
+export async function getLatestConversation() {
+  return chatDb.conversations.orderBy("updatedAt").last();
+}
+
 export async function getConversation(conversationId: string) {
   return chatDb.conversations.get(conversationId);
+}
+
+export async function updateConversationMeta(
+  conversationId: string,
+  updates: Partial<Pick<StoredConversation, "title" | "modelId" | "isArchived">>
+) {
+  const existing = await chatDb.conversations.get(conversationId);
+  if (!existing) return;
+  await chatDb.conversations.put({ ...existing, ...updates, updatedAt: new Date().toISOString() });
 }
 
 export async function getMessages(conversationId: string) {
@@ -84,4 +102,10 @@ export async function deleteConversation(conversationId: string) {
     await chatDb.messages.where({ conversationId }).delete();
     await chatDb.conversations.delete(conversationId);
   });
+}
+
+export async function archiveConversation(conversationId: string) {
+  const existing = await chatDb.conversations.get(conversationId);
+  if (!existing) return;
+  await chatDb.conversations.put({ ...existing, isArchived: true });
 }

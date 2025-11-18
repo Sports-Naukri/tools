@@ -206,6 +206,22 @@ Modify `next.config.ts` for advanced configurations:
 - Headers and security
 - Environment-specific settings
 
+## 📎 Attachments & Uploads
+
+- **Allowed types**: `image/png`, `image/jpeg`, `image/webp`, `application/pdf`
+- **Max size**: 5 MB per file (client and server enforce the same limit)
+- **Count limit**: Up to 5 attachments per user message; older selections must be removed before adding more
+- **URL safety**: Remote attachments must use HTTPS and a valid absolute URL
+- **Consistency**: The upload route, chat API, and client composer all share the validation helpers in `src/lib/chat/attachments.ts`
+
+If a file violates any rule, the composer shows an inline error and the server responds with a structured validation error so the UI can surface the issue gracefully.
+
+**Manual validation checklist**
+- Attempt to attach 6 files and confirm the composer blocks the action with the count-limit error
+- Upload a file >5 MB or a disallowed MIME type and verify both the client and `/api/upload` reject it
+- Paste an `http://` or malformed URL in the attachment editor and ensure the server returns `invalid_protocol`
+- Re-run `npm run lint` after attachment changes to ensure TypeScript types stay in sync
+
 ## 📝 Scripts
 
 - `npm run dev` - Start development server

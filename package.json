@@ -28,6 +28,7 @@
     "dexie": "^4.0.7",
     "lucide-react": "^0.471.0",
     "nanoid": "^5.0.7",
+    "nanostores": "^1.1.0",
     "next": "16.0.1",
     "picomatch": "4.0.3",
     "react": "19.2.0",

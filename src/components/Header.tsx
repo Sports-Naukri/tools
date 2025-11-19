@@ -37,7 +37,7 @@ export function Header({
 }: HeaderProps) {
   return (
     <>
-      <header className="fixed top-0 z-50 w-full max-w-[100vw] bg-[#f9f7ff]">
+      <header className="fixed top-0 z-50 w-full max-w-[100vw] bg-[#f9f7ff]/10 backdrop-blur-md">
         <div className="container mx-auto flex h-16 max-w-full items-center gap-4 px-2 sm:px-4 lg:px-12">
           <div className="flex flex-1 items-center gap-3">
             <div className="flex w-full items-center gap-2">
@@ -91,7 +91,7 @@ export function Header({
                 <span
                   className={`${cedora.className} text-lg font-semibold tracking-tight`}
                 >
-                  SportsNaukri <span className="text-[#6d28d9]">Tools</span>
+                  SportsNaukri <span className="text-[#006dff]">Tools</span>
                 </span>
               </Link>
               <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-primary md:hidden">
@@ -102,7 +102,7 @@ export function Header({
                     height="18px"
                     viewBox="0 -960 960 960"
                     width="24px"
-                    fill="#6D28D9"
+                    fill="#006dff"
                   >
                     <path d="m422-232 207-248H469l29-227-185 267h139l-30 208ZM320-80l40-280H160l360-520h80l-40 320h240L400-80h-80Zm151-390Z" />
                   </svg>
@@ -149,7 +149,7 @@ export function Header({
         </div>
       </header>
       <div
-        className={`fixed top-16 inset-y-0 left-0 z-40 h-[calc(100dvh-4rem)] w-[80%] max-w-sm transform-gpu bg-[#f9f7ff] pb-10 transition-transform duration-300 ease-in-out md:w-[320px] md:max-w-none ${
+        className={`fixed top-16 inset-y-0 left-0 z-40 h-[calc(100dvh-4rem)] w-[80%] max-w-sm transform-gpu bg-[#f9f7ff]/10 backdrop-blur-md pb-10 transition-transform duration-300 ease-in-out md:w-[320px] md:max-w-none ${
           isMenuOpen
             ? "translate-x-0"
             : "-translate-x-full md:-translate-x-full"

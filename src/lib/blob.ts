@@ -19,7 +19,7 @@ export async function uploadToBlob({
 
   const blob = await put(fileName, data, {
     contentType,
-    access,
+    access: access as any,
     token: process.env.BLOB_READ_WRITE_TOKEN,
   });
 

@@ -2,8 +2,6 @@ import { openai } from "@ai-sdk/openai";
 import {
   convertToCoreMessages,
   streamText,
-  type Attachment,
-  type Message,
 } from "ai";
 import { NextResponse } from "next/server";
 
@@ -58,7 +56,7 @@ export async function POST(req: Request) {
       throw validationError;
     }
 
-    let uiMessages: Message[] = [];
+    let uiMessages: any[] = [];
     try {
       uiMessages = attachUploadsToMessages(payload.messages, sanitizedAttachments);
     } catch (attachmentError) {
@@ -70,14 +68,14 @@ export async function POST(req: Request) {
       }
       throw attachmentError;
     }
-    const coreMessages = convertToCoreMessages(uiMessages);
+    const coreMessages = convertToCoreMessages(uiMessages as any);
 
     const result = await streamText({
       model: openai(payload.modelId),
       messages: coreMessages,
     });
 
-    return result.toDataStreamResponse();
+    return (result as any).toDataStreamResponse();
   } catch (error) {
     if (error instanceof RateLimitError) {
       return NextResponse.json(
@@ -97,37 +95,32 @@ export async function POST(req: Request) {
 function attachUploadsToMessages(
   messages: ChatRequestPayload["messages"],
   attachments: AttachmentPayload[]
-): Message[] {
-  if (!attachments.length) {
-    return messages as Message[];
+): any[] {
+  const mapped = messages.map((message) => {
+    const parts = message.parts ? [...message.parts] : [{ type: 'text', text: message.content || '' }];
+    return {
+      id: message.id,
+      role: message.role,
+      parts,
+    };
+  });
+
+  if (attachments.length > 0) {
+    const lastIndex = mapped.length - 1;
+    if (lastIndex >= 0 && mapped[lastIndex].role === "user") {
+      mapped[lastIndex].parts.push(...attachments.map(a => ({
+        type: 'file',
+        url: a.url,
+        mediaType: a.type,
+        name: a.name,
+      })));
+    } else {
+       throw new AttachmentValidationError(
+        "Attachments must be sent with a user message",
+        "missing_user_message"
+      );
+    }
   }
-
-  const mapped: Message[] = messages.map((message) => ({
-    id: message.id,
-    role: message.role,
-    content: message.content,
-  }));
-
-  const lastIndex = mapped.length - 1;
-  if (lastIndex < 0 || mapped[lastIndex].role !== "user") {
-    throw new AttachmentValidationError(
-      "Attachments must be sent with a user message",
-      "missing_user_message"
-    );
-  }
-
-  mapped[lastIndex] = {
-    ...mapped[lastIndex],
-    experimental_attachments: attachments.map(convertAttachment),
-  };
 
   return mapped;
-}
-
-function convertAttachment(attachment: AttachmentPayload): Attachment {
-  return {
-    name: attachment.name,
-    url: attachment.url,
-    contentType: attachment.type,
-  } satisfies Attachment;
 }

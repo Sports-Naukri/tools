@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useChat, type Message } from "ai/react";
+import { useChat, type UIMessage } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { nanoid } from "nanoid";
 
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
-import { ModelPicker } from "@/components/chat/ModelPicker";
 import { DEFAULT_CHAT_MODEL_ID } from "@/lib/chat/constants";
 import {
   ALLOWED_ATTACHMENT_TYPES,
@@ -18,6 +17,7 @@ import {
 import type { AttachmentPreview, UsageSnapshot } from "@/lib/chat/types";
 import {
   createConversation,
+  deleteConversation,
   getConversation,
   getLatestConversation,
   getMessages,
@@ -114,14 +114,25 @@ export function ChatPageClient() {
     [refreshHistory]
   );
 
+  const handleDeleteConversation = useCallback(
+    async (conversationId: string) => {
+      await deleteConversation(conversationId);
+      await refreshHistory();
+      if (session?.conversation.id === conversationId) {
+        await handleNewChat();
+      }
+    },
+    [refreshHistory, session?.conversation.id, handleNewChat]
+  );
+
   if (isBootstrapping || !session) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center">
+      <div className="flex h-screen w-full items-center justify-center bg-white">
         {error ? (
           <p className="text-sm text-red-500">{error}</p>
         ) : (
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm text-slate-600 shadow">
-            <Loader2 className="h-4 w-4 animate-spin text-[#007FF6]" /> Preparing chat…
+          <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-600">
+            <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> Preparing chat…
           </div>
         )}
       </div>
@@ -129,13 +140,14 @@ export function ChatPageClient() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 lg:flex-row lg:px-8">
+    <div className="flex h-screen w-full overflow-hidden bg-white">
       <ChatSidebar
         usage={session.usage}
         conversations={history}
         activeConversationId={session.conversation.id}
         onNewChat={handleNewChat}
         onSelectConversation={handleSelectConversation}
+        onDeleteConversation={handleDeleteConversation}
       />
       <ChatWorkspace
         key={session.conversation.id}
@@ -157,8 +169,10 @@ type ChatWorkspaceProps = {
 
 function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
+  const [isSearchEnabled, setIsSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [input, setInput] = useState("");
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
   const persistedIds = useRef(new Set(session.messages.map((message) => message.id)));
 
@@ -166,20 +180,13 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     (attachment) => attachment.status === "ready" && typeof attachment.url === "string"
   );
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+  const { messages, sendMessage, status } = useChat({
     id: session.conversation.id,
-    api: "/api/chat",
-    initialMessages: session.messages.map((message) => ({
+    messages: session.messages.map((message) => ({
       id: message.id,
       role: message.role,
-      content: message.content,
+      parts: [{ type: "text", text: message.content }],
     })),
-    body: {
-      conversationId: session.conversation.id,
-      modelId,
-      attachments: readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url })),
-      isNewConversation: !hasStartedRef.current,
-    },
     onError: (error) => {
       setComposerError(error.message);
     },
@@ -191,6 +198,33 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     },
   });
 
+  const isLoading = status === "streaming" || status === "submitted";
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+  };
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() && attachments.length === 0) return;
+    
+    const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
+
+    await sendMessage({
+      role: "user",
+      parts: [{ type: "text", text: input }],
+    }, {
+      body: {
+        conversationId: session.conversation.id,
+        modelId,
+        isSearchEnabled,
+        attachments: currentAttachments,
+        isNewConversation: !hasStartedRef.current,
+      }
+    });
+    setInput("");
+  };
+
   useEffect(() => {
     const persistNewMessages = async () => {
       const unsaved = messages.filter((message) => !persistedIds.current.has(message.id));
@@ -201,7 +235,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
           id: message.id,
           conversationId: session.conversation.id,
           role: message.role,
-          content: message.content,
+          content: getTextContent(message),
           createdAt: new Date().toISOString(),
         });
         persistedIds.current.add(message.id);
@@ -210,7 +244,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       if (firstUserMessage && !session.conversation.title) {
         const updatedConversation: StoredConversation = {
           ...session.conversation,
-          title: deriveTitle(firstUserMessage.content),
+          title: deriveTitle(getTextContent(firstUserMessage)),
         };
         await updateConversationMeta(session.conversation.id, { title: updatedConversation.title });
         onConversationUpdate(updatedConversation);
@@ -289,32 +323,29 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     session.usage.daily.remaining <= 0 || session.usage.chat.remaining <= 0 || isLoading;
 
   return (
-    <section className="flex flex-1 flex-col gap-4">
-      <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
-        <div className="rounded-3xl border border-slate-100 bg-white/80 p-6 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Conversation</p>
-          <h1 className="text-3xl font-bold text-slate-900">{session.conversation.title || "New chat"}</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Model preferences, usage counters, and attachments live only in your browser storage.
-          </p>
-        </div>
-        <ModelPicker modelId={modelId} onChange={setModelId} />
+    <section className="flex flex-1 flex-col h-full relative">
+      <div className="flex-1 overflow-y-auto">
+        <MessageList messages={messages as any} isStreaming={isLoading} />
       </div>
 
-      <MessageList messages={messages} isStreaming={isLoading} />
-
-      <ChatComposer
-        input={input}
-        onInputChange={handleInputChange}
-        onSubmit={handleSubmit}
-        disabled={chatDisabled}
-        isStreaming={isLoading}
-        usage={session.usage}
-        attachments={attachments}
-        onRemoveAttachment={handleRemoveAttachment}
-        onFileSelect={handleFileSelect}
-        error={composerError}
-      />
+      <div className="w-full bg-white">
+        <ChatComposer
+          input={input}
+          onInputChange={handleInputChange}
+          onSubmit={handleSubmit}
+          disabled={chatDisabled}
+          isStreaming={isLoading}
+          usage={session.usage}
+          attachments={attachments}
+          onRemoveAttachment={handleRemoveAttachment}
+          onFileSelect={handleFileSelect}
+          error={composerError}
+          modelId={modelId}
+          onModelChange={setModelId}
+          isSearchEnabled={isSearchEnabled}
+          onSearchToggle={() => setIsSearchEnabled(!isSearchEnabled)}
+        />
+      </div>
     </section>
   );
 }
@@ -339,8 +370,15 @@ function deriveTitle(content: string) {
   return `${trimmed.slice(0, 47)}…`;
 }
 
-const SUPPORTED_ROLES = new Set<Message["role"]>(["user", "assistant", "system"]);
+const SUPPORTED_ROLES = new Set<UIMessage["role"]>(["user", "assistant", "system"]);
 
-function isSupportedRole(role: Message["role"]): role is "user" | "assistant" | "system" {
+function isSupportedRole(role: UIMessage["role"]): role is "user" | "assistant" | "system" {
   return SUPPORTED_ROLES.has(role);
+}
+
+function getTextContent(message: UIMessage): string {
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => (part as any).text)
+    .join("");
 }

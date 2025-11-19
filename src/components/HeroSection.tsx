@@ -17,8 +17,8 @@ export function HeroSection({ onScrollClick }: HeroSectionProps) {
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 800 800"
-                fill="#6D28D9"
-                stroke="#6D28D9"
+                fill="#006dff"
+                stroke="#006dff"
                 strokeWidth="14.2857"
                 strokeMiterlimit="57.1429"
                 width={15} 
@@ -37,17 +37,14 @@ export function HeroSection({ onScrollClick }: HeroSectionProps) {
             </span>
           </div>
           <h1 className="mt-8 text-4xl font-black text-gray-900 sm:text-5xl md:text-6xl lg:text-7xl">
-            The <span className="gradient-text">Future</span> of Sports Careers,
-            Powered by AI
+            Find Your Dream <span className="gradient-text">Sports Career</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-gray-700 sm:text-xl">
-            Elevate your game in the sports industry. Our intelligent tools are
-            engineered to refine your resume, perfect job descriptions, and give
-            you a competitive edge.
+            Connect with top sports organizations and discover opportunities that match your passion for athletics and wellness.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Link
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/30 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-primary/40"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#006dff] px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#0056cc]"
               href="#tools"
               scroll
             >

@@ -11,30 +11,35 @@ export type ChatModel = {
 
 export const CHAT_MODELS: ChatModel[] = [
   {
+    id: "gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    description: "Fastest multimodal model",
+    isEnabled: true,
+  },
+  {
+    id: "gemini-2.5-flash-lite",
+    name: "Gemini 2.5 Flash Lite",
+    description: "Lightweight and efficient",
+    isEnabled: true,
+  },
+  {
     id: "gpt-4o-mini",
     name: "GPT-4o Mini",
     description: "Fast, lower-cost responses",
     isEnabled: true,
   },
   {
-    id: "gpt-4.1-mini",
-    name: "GPT-4.1 Mini",
-    description: "Balanced speed and quality",
+    id: "llama-3-70b",
+    name: "Llama 3 70B",
+    description: "Open source powerhouse",
     isEnabled: true,
   },
   {
-    id: "gpt-4.1",
-    name: "GPT-4.1",
-    description: "Locked placeholder for future tier",
-    isEnabled: false,
-  },
-  {
-    id: "gpt-4.1-pro",
-    name: "GPT-4.1 Pro",
-    description: "Locked placeholder for future tier",
-    isEnabled: false,
+    id: "mistral-large",
+    name: "Mistral Large",
+    description: "High performance open model",
+    isEnabled: true,
   },
 ];
 
-export const DEFAULT_CHAT_MODEL_ID = CHAT_MODELS.find((model) => model.isEnabled)?.id ??
-  "gpt-4o-mini";
+export const DEFAULT_CHAT_MODEL_ID = "gemini-2.5-flash";

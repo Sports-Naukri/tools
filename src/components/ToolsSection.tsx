@@ -141,28 +141,28 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
               <div
                 key={tool.title}
                 ref={setCardRef(index)}
-                className="tool-card group flex flex-col overflow-hidden rounded-3xl border border-border/40 bg-white shadow-sm transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-md"
+                className="tool-card group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:shadow-md hover:border-blue-200"
               >
-                <div className="relative h-64 w-full overflow-hidden bg-linear-to-br from-primary/10 via-primary/5 to-transparent">
+                <div className="relative h-48 w-full overflow-hidden bg-slate-50">
                   <Image
                     src={tool.image.src}
                     alt={tool.image.alt}
                     fill
                     sizes="(min-width: 768px) 50vw, 100vw"
-                    className="object-cover object-top"
+                    className="object-cover object-top transition-transform duration-500 group-hover:scale-105"
                     priority={index === 0}
                   />
                 </div>
-                <div className="flex flex-1 flex-col gap-4 px-6 py-6">
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900">
+                <div className="flex flex-1 flex-col gap-4 p-6">
+                  <div className="flex-1">
+                    <h3 className="text-xl font-bold text-slate-900">
                       {tool.title}
                     </h3>
                     <p
-                      className="mt-2 text-sm leading-6 text-gray-600"
+                      className="mt-2 text-sm leading-relaxed text-slate-600"
                       style={{
                         display: "-webkit-box",
-                        WebkitLineClamp: 1,
+                        WebkitLineClamp: 2,
                         WebkitBoxOrient: "vertical",
                         overflow: "hidden",
                       }}
@@ -171,26 +171,12 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
                     </p>
                   </div>
                   <Link
-                    className="group/cta inline-flex items-center gap-2 text-sm font-semibold text-primary transition-colors duration-200 hover:text-primary/80"
+                    className="group/cta inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#006dff] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0056cc]"
                     href={tool.cta.href}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
                     <span>{tool.cta.label}</span>
-                    <span
-                      className="inline-flex transition-transform duration-200 group-hover/cta:translate-x-1"
-                      aria-hidden="true"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        height="18"
-                        viewBox="0 -960 960 960"
-                        width="18"
-                        fill="currentColor"
-                      >
-                        <path d="M536-600 352-784l56-56 320 320-320 320-56-56 184-184H160v-80h376Z" />
-                      </svg>
-                    </span>
                   </Link>
                 </div>
               </div>
@@ -198,10 +184,10 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
           })}
         </div>
         <div className="mt-24 text-center">
-          <div className="inline-block rounded-full border border-border px-6 py-3 bg-secondary shadow-sm transition-shadow hover:shadow-md">
-            <p className="flex items-center justify-center gap-3 text-lg font-semibold text-foreground/80">
+          <div className="inline-block rounded-full border border-blue-100 px-6 py-3 bg-blue-50/50 shadow-sm transition-shadow hover:shadow-md">
+            <p className="flex items-center justify-center gap-3 text-lg font-semibold text-slate-700">
               <span
-                className="inline-flex animate-pulse text-primary"
+                className="inline-flex animate-pulse text-[#006dff]"
                 aria-hidden="true"
               >
                 <svg
@@ -209,7 +195,7 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
                   height="24px"
                   viewBox="0 -960 960 960"
                   width="24px"
-                  fill="#000000"
+                  fill="currentColor"
                 >
                   <path d="m226-559 78 33q14-28 29-54t33-52l-56-11-84 84Zm142 83 114 113q42-16 90-49t90-75q70-70 109.5-155.5T806-800q-72-5-158 34.5T492-656q-42 42-75 90t-49 90Zm178-65q-23-23-23-56.5t23-56.5q23-23 57-23t57 23q23 23 23 56.5T660-541q-23 23-57 23t-57-23Zm19 321 84-84-11-56q-26 18-52 32.5T532-299l33 79Zm313-653q19 121-23.5 235.5T708-419l20 99q4 20-2 39t-20 33L538-80l-84-197-171-171-197-84 167-168q14-14 33.5-20t39.5-2l99 20q104-104 218-147t235-24ZM157-321q35-35 85.5-35.5T328-322q35 35 34.5 85.5T327-151q-25 25-83.5 43T82-76q14-103 32-161.5t43-83.5Zm57 56q-10 10-20 36.5T180-175q27-4 53.5-13.5T270-208q12-12 13-29t-11-29q-12-12-29-11.5T214-265Z" />
                 </svg>

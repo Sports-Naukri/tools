@@ -16,21 +16,23 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^2.0.68",
+    "@ai-sdk/react": "^2.0.95",
+    "@nanostores/react": "github:ai/react",
     "@vercel/analytics": "^1.5.0",
+    "@vercel/blob": "^0.25.0",
     "@vercel/kv": "^2.0.0",
     "@vercel/speed-insights": "^1.2.0",
-    "@ai-sdk/openai": "^0.0.45",
-    "@vercel/blob": "^0.25.0",
-    "ai": "^3.2.32",
+    "ai": "^5.0.95",
     "clsx": "^2.1.1",
     "dexie": "^4.0.7",
     "lucide-react": "^0.471.0",
     "nanoid": "^5.0.7",
-    "picomatch": "4.0.3",
-    "zod": "^3.24.4",
     "next": "16.0.1",
+    "picomatch": "4.0.3",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "zod": "^3.24.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

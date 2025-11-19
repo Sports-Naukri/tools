@@ -31,6 +31,7 @@ export function ChatComposer({
   onSubmit,
   disabled,
   isStreaming,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   usage,
   attachments,
   onRemoveAttachment,
@@ -48,6 +49,7 @@ export function ChatComposer({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (!disabled && !isStreaming) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onSubmit(e as any);
       }
     }

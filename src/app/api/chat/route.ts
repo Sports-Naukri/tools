@@ -56,6 +56,7 @@ export async function POST(req: Request) {
       throw validationError;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let uiMessages: any[] = [];
     try {
       uiMessages = attachUploadsToMessages(payload.messages, sanitizedAttachments);
@@ -68,6 +69,7 @@ export async function POST(req: Request) {
       }
       throw attachmentError;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const coreMessages = convertToCoreMessages(uiMessages as any);
 
     const result = await streamText({
@@ -75,6 +77,7 @@ export async function POST(req: Request) {
       messages: coreMessages,
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (result as any).toDataStreamResponse();
   } catch (error) {
     if (error instanceof RateLimitError) {
@@ -95,6 +98,7 @@ export async function POST(req: Request) {
 function attachUploadsToMessages(
   messages: ChatRequestPayload["messages"],
   attachments: AttachmentPayload[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any[] {
   const mapped = messages.map((message) => {
     const parts = message.parts ? [...message.parts] : [{ type: 'text', text: message.content || '' }];

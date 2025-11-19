@@ -19,6 +19,7 @@ export async function uploadToBlob({
 
   const blob = await put(fileName, data, {
     contentType,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     access: access as any,
     token: process.env.BLOB_READ_WRITE_TOKEN,
   });

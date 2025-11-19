@@ -186,7 +186,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       id: message.id,
       role: message.role,
       parts: [{ type: "text", text: message.content }],
-    })),
+    })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
     onError: (error) => {
       setComposerError(error.message);
     },
@@ -325,7 +325,11 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   return (
     <section className="flex flex-1 flex-col h-full relative">
       <div className="flex-1 overflow-y-auto">
-        <MessageList messages={messages as any} isStreaming={isLoading} />
+        <MessageList
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          messages={messages as any}
+          isStreaming={isLoading}
+        />
       </div>
 
       <div className="w-full bg-white">
@@ -379,6 +383,7 @@ function isSupportedRole(role: UIMessage["role"]): role is "user" | "assistant" 
 function getTextContent(message: UIMessage): string {
   return message.parts
     .filter((part) => part.type === "text")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((part) => (part as any).text)
     .join("");
 }

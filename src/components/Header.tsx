@@ -37,7 +37,7 @@ export function Header({
 }: HeaderProps) {
   return (
     <>
-      <header className="fixed top-0 z-50 w-full max-w-[100vw] bg-[#f9f7ff]/10 backdrop-blur-md">
+      <header className="fixed top-0 z-50 w-full max-w-screen bg-[#f9f7ff]/10 backdrop-blur-md">
         <div className="container mx-auto flex h-16 max-w-full items-center gap-4 px-2 sm:px-4 lg:px-12">
           <div className="flex flex-1 items-center gap-3">
             <div className="flex w-full items-center gap-2">

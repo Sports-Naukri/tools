@@ -108,7 +108,7 @@ export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
   return (
     <div
       id="root"
-      className="flex min-h-screen max-w-[100vw] flex-col overflow-x-hidden"
+      className="flex min-h-screen max-w-screen flex-col overflow-x-hidden"
     >
       <Header
         navLinks={navLinks}

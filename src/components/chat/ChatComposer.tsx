@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEventHandler, type FormEventHandler, type KeyboardEvent } from "react";
-import { ArrowUp, Paperclip, X, ChevronDown, Globe, Zap, Loader2, Check } from "lucide-react";
+import { ArrowUp, Paperclip, X, ChevronDown, Globe, Zap, Loader2, Check, Lock } from "lucide-react";
 import clsx from "clsx";
 
 import type { AttachmentPreview } from "@/lib/chat/types";
@@ -121,26 +121,39 @@ export function ChatComposer({
                     onClick={() => setIsModelPickerOpen(false)} 
                   />
                   <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-slate-200 bg-white p-1 shadow-lg z-20">
-                    {CHAT_MODELS.filter(m => m.isEnabled).map((model) => (
-                      <button
-                        key={model.id}
-                        type="button"
-                        onClick={() => {
-                          onModelChange?.(model.id);
-                          setIsModelPickerOpen(false);
-                        }}
-                        className={clsx(
-                          "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50",
-                          model.id === currentModel.id ? "bg-slate-50 text-slate-900" : "text-slate-600"
-                        )}
-                      >
-                        <div>
-                          <div className="font-medium">{model.name}</div>
-                          <div className="text-xs text-slate-400">{model.description}</div>
-                        </div>
-                        {model.id === currentModel.id && <Check className="h-4 w-4 text-[#006dff]" />}
-                      </button>
-                    ))}
+                    {CHAT_MODELS.map((model) => {
+                      const isActive = model.id === currentModel.id;
+                      const isLocked = !model.isEnabled;
+                      const vendorLabel = model.vendor.toUpperCase();
+
+                      return (
+                        <button
+                          key={model.id}
+                          type="button"
+                          onClick={() => {
+                            if (isLocked) return;
+                            onModelChange?.(model.id);
+                            setIsModelPickerOpen(false);
+                          }}
+                          className={clsx(
+                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition",
+                            isActive ? "bg-slate-50 text-slate-900" : "text-slate-600",
+                            isLocked && "cursor-not-allowed opacity-60 hover:bg-transparent"
+                          )}
+                        >
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">{vendorLabel}</div>
+                            <div className="font-medium">{model.name}</div>
+                            <div className="text-xs text-slate-400">{model.description}</div>
+                          </div>
+                          {isLocked ? (
+                            <Lock className="h-4 w-4 text-slate-400" />
+                          ) : (
+                            isActive && <Check className="h-4 w-4 text-[#006dff]" />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </>
               )}

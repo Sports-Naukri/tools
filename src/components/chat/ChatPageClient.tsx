@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -167,6 +167,8 @@ type ChatWorkspaceProps = {
   loadUsage: (conversationId: string) => Promise<UsageSnapshot>;
 };
 
+type UIPart = NonNullable<UIMessage["parts"]>[number];
+
 function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
   const [isSearchEnabled, setIsSearchEnabled] = useState(false);
@@ -176,17 +178,19 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
   const persistedIds = useRef(new Set(session.messages.map((message) => message.id)));
 
+  const initialMessages = useMemo<UIMessage[]>(
+    () => session.messages.map(convertStoredMessageToUIMessage),
+    [session.messages]
+  );
+
   const readyAttachments = attachments.filter(
     (attachment) => attachment.status === "ready" && typeof attachment.url === "string"
   );
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status } = useChat<UIMessage>({
     id: session.conversation.id,
-    messages: session.messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      parts: [{ type: "text", text: message.content }],
-    })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+    messages: initialMessages,
+    api: "/api/chat",
     onError: (error) => {
       setComposerError(error.message);
     },
@@ -206,22 +210,46 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() && attachments.length === 0) return;
-    
+    const trimmed = input.trim();
+    const hasText = trimmed.length > 0;
     const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
 
-    await sendMessage({
-      role: "user",
-      parts: [{ type: "text", text: input }],
-    }, {
-      body: {
-        conversationId: session.conversation.id,
-        modelId,
-        isSearchEnabled,
-        attachments: currentAttachments,
-        isNewConversation: !hasStartedRef.current,
+    if (!hasText && currentAttachments.length === 0) {
+      return;
+    }
+
+    const parts: UIPart[] = [];
+    if (hasText) {
+      parts.push({ type: "text", text: trimmed } as UIPart);
+    }
+    for (const attachment of currentAttachments) {
+      if (!attachment.url) continue;
+      parts.push(
+        {
+          type: "file",
+          url: attachment.url,
+          name: attachment.name,
+          mimeType: attachment.type,
+          mediaType: attachment.type,
+        } as UIPart
+      );
+    }
+
+    await sendMessage(
+      {
+        role: "user",
+        parts,
+      },
+      {
+        body: {
+          conversationId: session.conversation.id,
+          modelId,
+          isSearchEnabled,
+          attachments: currentAttachments,
+          isNewConversation: !hasStartedRef.current,
+        },
       }
-    });
+    );
     setInput("");
   };
 
@@ -326,8 +354,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     <section className="flex flex-1 flex-col h-full relative">
       <div className="flex-1 overflow-y-auto">
         <MessageList
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          messages={messages as any}
+          messages={messages}
           isStreaming={isLoading}
         />
       </div>
@@ -372,6 +399,35 @@ function deriveTitle(content: string) {
   const trimmed = content.trim();
   if (trimmed.length <= 50) return trimmed;
   return `${trimmed.slice(0, 47)}…`;
+}
+
+function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
+  const parts: UIPart[] = [];
+
+  if (message.content) {
+    parts.push({ type: "text", text: message.content } as UIPart);
+  }
+
+  if (message.attachments?.length) {
+    for (const attachment of message.attachments) {
+      if (!attachment.url) continue;
+      parts.push(
+        {
+          type: "file",
+          url: attachment.url,
+          name: attachment.name,
+          mimeType: attachment.type,
+          mediaType: attachment.type,
+        } as UIPart
+      );
+    }
+  }
+
+  return {
+    id: message.id,
+    role: message.role,
+    parts,
+  } as UIMessage;
 }
 
 const SUPPORTED_ROLES = new Set<UIMessage["role"]>(["user", "assistant", "system"]);

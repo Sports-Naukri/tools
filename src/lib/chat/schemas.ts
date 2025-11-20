@@ -8,20 +8,34 @@ export const attachmentSchema = z.object({
   type: z.string(),
 });
 
+const textPartSchema = z.object({
+  type: z.literal("text"),
+  text: z.string(),
+});
+
+const filePartSchema = z.object({
+  type: z.literal("file"),
+  url: z.string().url(),
+  name: z.string().optional(),
+  mimeType: z.string().optional(),
+  mediaType: z.string().optional(),
+});
+
+const genericPartSchema = z.union([textPartSchema, filePartSchema, z.record(z.any())]);
+
+const messageSchema = z.object({
+  id: z.string(),
+  role: z.enum(["user", "assistant", "system", "tool"]),
+  content: z.string().optional(),
+  parts: z.array(genericPartSchema).optional(),
+});
+
 export const chatRequestSchema = z.object({
   conversationId: z.string().min(4),
   isNewConversation: z.boolean().optional().default(false),
   modelId: z.string().min(2),
-  messages: z
-    .array(
-      z.object({
-        id: z.string(),
-        role: z.enum(["user", "assistant", "system"]),
-        content: z.string().optional(),
-        parts: z.array(z.any()).optional(),
-      })
-    )
-    .min(1),
+  isSearchEnabled: z.boolean().optional().default(false),
+  messages: z.array(messageSchema).min(1),
   attachments: z.array(attachmentSchema).optional().default([]),
 });
 

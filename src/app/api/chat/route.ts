@@ -1,9 +1,7 @@
-import { openai } from "@ai-sdk/openai";
-import {
-  convertToCoreMessages,
-  streamText,
-} from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { convertToCoreMessages as convertToModelMessages, streamText, type UIMessage } from "ai";
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 
 import { CHAT_MODELS } from "@/lib/chat/constants";
 import {
@@ -22,16 +20,21 @@ import {
 export const runtime = "edge";
 export const preferredRegion = ["bom1", "sin1", "fra1"];
 
-function isAllowedModel(modelId: string) {
-  return CHAT_MODELS.some((model) => model.id === modelId && model.isEnabled);
-}
+const openAIProvider = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  organization: process.env.OPENAI_ORGANIZATION,
+  project: process.env.OPENAI_PROJECT,
+});
+
+const getEnabledModel = (modelId: string) => CHAT_MODELS.find((model) => model.id === modelId && model.isEnabled);
 
 export async function POST(req: Request) {
   try {
     const json = await req.json();
     const payload = chatRequestSchema.parse(json);
 
-    if (!isAllowedModel(payload.modelId)) {
+    const selectedModel = getEnabledModel(payload.modelId);
+    if (!selectedModel) {
       return NextResponse.json({ error: "Model is not available" }, { status: 400 });
     }
 
@@ -43,43 +46,45 @@ export async function POST(req: Request) {
 
     await assertCanSendMessage(ip, payload.conversationId);
 
-    let sanitizedAttachments: AttachmentPayload[] = [];
-    try {
-      sanitizedAttachments = ensureValidAttachments(payload.attachments);
-    } catch (validationError) {
-      if (validationError instanceof AttachmentValidationError) {
-        return NextResponse.json(
-          { error: validationError.message, code: validationError.code },
-          { status: 400 }
-        );
-      }
-      throw validationError;
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: "OpenAI API key is not configured" }, { status: 500 });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let uiMessages: any[] = [];
-    try {
-      uiMessages = attachUploadsToMessages(payload.messages, sanitizedAttachments);
-    } catch (attachmentError) {
-      if (attachmentError instanceof AttachmentValidationError) {
-        return NextResponse.json(
-          { error: attachmentError.message, code: attachmentError.code },
-          { status: 400 }
-        );
-      }
-      throw attachmentError;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const coreMessages = convertToCoreMessages(uiMessages as any);
+    const sanitizedAttachments = ensureValidAttachments(payload.attachments);
+    const uiMessages = attachUploadsToMessages(payload.messages, sanitizedAttachments);
+    const modelMessages = convertToModelMessages(uiMessages as UIMessage[]);
+
+    console.log("/api/chat env", {
+      hasKey: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      keyLength: process.env.OPENAI_API_KEY?.trim().length,
+      project: process.env.OPENAI_PROJECT,
+      organization: process.env.OPENAI_ORGANIZATION,
+    });
 
     const result = await streamText({
-      model: openai(payload.modelId),
-      messages: coreMessages,
+      model: openAIProvider(selectedModel.providerModelId),
+      messages: modelMessages,
+      abortSignal: req.signal,
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (result as any).toDataStreamResponse();
+    return (result as any).toUIMessageStreamResponse();
   } catch (error) {
+    if (error instanceof ZodError) {
+      console.error("Invalid chat payload", error.issues);
+      return NextResponse.json(
+        { error: "Invalid request payload", issues: error.issues },
+        { status: 400 }
+      );
+    }
+
+    if (error instanceof AttachmentValidationError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 400 }
+      );
+    }
+
     if (error instanceof RateLimitError) {
       return NextResponse.json(
         { error: error.message, code: error.code, remaining: error.remaining },
@@ -95,36 +100,77 @@ export async function POST(req: Request) {
   }
 }
 
+type UIPart = NonNullable<UIMessage["parts"]>[number];
+
 function attachUploadsToMessages(
   messages: ChatRequestPayload["messages"],
   attachments: AttachmentPayload[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any[] {
-  const mapped = messages.map((message) => {
-    const parts = message.parts ? [...message.parts] : [{ type: 'text', text: message.content || '' }];
-    return {
-      id: message.id,
-      role: message.role,
-      parts,
-    };
-  });
-
-  if (attachments.length > 0) {
-    const lastIndex = mapped.length - 1;
-    if (lastIndex >= 0 && mapped[lastIndex].role === "user") {
-      mapped[lastIndex].parts.push(...attachments.map(a => ({
-        type: 'file',
-        url: a.url,
-        mediaType: a.type,
-        name: a.name,
-      })));
-    } else {
-       throw new AttachmentValidationError(
-        "Attachments must be sent with a user message",
-        "missing_user_message"
-      );
-    }
+): UIMessage[] {
+  if (!messages.length) {
+    throw new AttachmentValidationError(
+      "At least one message is required",
+      "missing_user_message"
+    );
   }
 
-  return mapped;
+  const cloned = messages.map<UIMessage>((message) => ({
+    ...message,
+    parts: normalizeParts(message),
+  }));
+
+  if (!attachments.length) {
+    return cloned;
+  }
+
+  const lastUserMessage = findLastUserMessage(cloned);
+  if (!lastUserMessage) {
+    throw new AttachmentValidationError(
+      "Attachments must accompany a user message",
+      "missing_user_message"
+    );
+  }
+
+  lastUserMessage.parts ??= [];
+  const existingAttachmentUrls = new Set(
+    lastUserMessage.parts
+      ?.filter((part): part is UIPart & { type: "file"; url?: string } => part.type === "file")
+      .map((part) => part.url)
+      .filter((url): url is string => typeof url === "string")
+  );
+  for (const attachment of attachments) {
+    if (existingAttachmentUrls.has(attachment.url)) {
+      continue;
+    }
+    lastUserMessage.parts.push({
+      type: "file",
+      url: attachment.url,
+      name: attachment.name,
+      mimeType: attachment.type,
+      mediaType: attachment.type,
+    } as UIPart);
+  }
+
+  return cloned;
+}
+
+function normalizeParts(message: ChatRequestPayload["messages"][number]): UIPart[] {
+  if (message.parts && message.parts.length > 0) {
+    return message.parts.map((part) => ({ ...part })) as UIPart[];
+  }
+
+  if (message.content) {
+    return [{ type: "text", text: message.content }] as UIPart[];
+  }
+
+  return [];
+}
+
+function findLastUserMessage(messages: UIMessage[]): UIMessage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (candidate.role === "user") {
+      return candidate;
+    }
+  }
+  return null;
 }

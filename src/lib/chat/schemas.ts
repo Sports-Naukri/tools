@@ -25,7 +25,7 @@ const genericPartSchema = z.union([textPartSchema, filePartSchema, z.record(z.an
 
 const messageSchema = z.object({
   id: z.string(),
-  role: z.enum(["user", "assistant", "system", "tool"]),
+  role: z.enum(["user", "assistant", "system"]),
   content: z.string().optional(),
   parts: z.array(genericPartSchema).optional(),
 });

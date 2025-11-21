@@ -190,7 +190,6 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const { messages, sendMessage, status } = useChat<UIMessage>({
     id: session.conversation.id,
     messages: initialMessages,
-    api: "/api/chat",
     onError: (error) => {
       setComposerError(error.message);
     },

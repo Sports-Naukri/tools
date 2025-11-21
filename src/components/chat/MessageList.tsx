@@ -1,17 +1,21 @@
 "use client";
 
-import type { UIMessage } from "@ai-sdk/react";
-import { Bot, Loader2, User } from "lucide-react";
+import { Bot, FileText, Loader2, User } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
 
+import type { ToolAwareMessage } from "@/lib/chat/tooling";
+import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
+
 export type MessageListProps = {
-  messages: UIMessage[];
+  messages: ToolAwareMessage[];
   isStreaming: boolean;
+  onSelectDocument?: (documentId: string) => void;
+  documentLookup?: Partial<Record<string, CanvasDocument>>;
 };
 
-export function MessageList({ messages, isStreaming }: MessageListProps) {
+export function MessageList({ messages, isStreaming, onSelectDocument, documentLookup = {} }: MessageListProps) {
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
       {messages.length === 0 && (
@@ -26,7 +30,12 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
         </div>
       )}
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
+        <MessageBubble
+          key={message.id}
+          message={message}
+          onSelectDocument={onSelectDocument}
+          documentLookup={documentLookup}
+        />
       ))}
       {isStreaming && (
         <div className="flex items-center gap-2 text-sm text-slate-500 pl-12">
@@ -37,7 +46,13 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
   );
 }
 
-function MessageBubble({ message }: { message: UIMessage }) {
+type MessageBubbleProps = {
+  message: ToolAwareMessage;
+  onSelectDocument?: (documentId: string) => void;
+  documentLookup: Partial<Record<string, CanvasDocument>>;
+};
+
+function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBubbleProps) {
   const isUser = message.role === "user";
   return (
     <div className={clsx("flex gap-4", isUser ? "justify-end" : "justify-start")}>
@@ -60,6 +75,24 @@ function MessageBubble({ message }: { message: UIMessage }) {
               <MarkdownContent key={index} text={part.text} isUser={isUser} />
             );
           }
+
+          if (isDocumentToolPart(part)) {
+            const docFromLookup = part.toolCallId ? documentLookup[part.toolCallId] : undefined;
+            const docFromOutput = isGeneratedDocument(part.output) ? part.output : undefined;
+            const resolvedDocument = docFromLookup ?? docFromOutput;
+
+            if (!resolvedDocument) {
+              return null;
+            }
+
+            return (
+              <DocumentChip
+                key={`doc-${part.toolCallId ?? index}`}
+                document={resolvedDocument}
+                onSelectDocument={onSelectDocument}
+              />
+            );
+          }
           return null;
         })}
       </div>
@@ -70,6 +103,41 @@ function MessageBubble({ message }: { message: UIMessage }) {
       )}
     </div>
   );
+}
+
+type DocumentChipProps = {
+  document: CanvasDocument;
+  onSelectDocument?: (documentId: string) => void;
+};
+
+function DocumentChip({ document, onSelectDocument }: DocumentChipProps) {
+  if (!document) return null;
+  const readableType = document.type.replace(/_/g, " ");
+  const label = `View generated ${readableType}`;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelectDocument?.(document.id)}
+      className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+    >
+      <FileText className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}
+
+const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
+
+type UnknownToolPart = {
+  type?: string;
+  toolCallId?: string;
+  state?: string;
+  output?: unknown;
+};
+
+function isDocumentToolPart(part: unknown): part is UnknownToolPart {
+  return Boolean(part && typeof part === "object" && (part as UnknownToolPart).type === DOCUMENT_PART_TYPE);
 }
 
 type MarkdownContentProps = {

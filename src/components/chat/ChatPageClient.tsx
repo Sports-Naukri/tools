@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { nanoid } from "nanoid";
 
+import { CanvasPanel } from "@/components/canvas/CanvasPanel";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
@@ -27,6 +28,8 @@ import {
   type StoredConversation,
   type StoredMessage,
 } from "@/lib/chat/storage";
+import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
+import type { ToolAwareMessage } from "@/lib/chat/tooling";
 
 type SessionState = {
   conversation: StoredConversation;
@@ -178,8 +181,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
   const persistedIds = useRef(new Set(session.messages.map((message) => message.id)));
 
-  const initialMessages = useMemo<UIMessage[]>(
-    () => session.messages.map(convertStoredMessageToUIMessage),
+  const initialMessages = useMemo<ToolAwareMessage[]>(
+    () => session.messages.map(convertStoredMessageToUIMessage) as ToolAwareMessage[],
     [session.messages]
   );
 
@@ -187,7 +190,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     (attachment) => attachment.status === "ready" && typeof attachment.url === "string"
   );
 
-  const { messages, sendMessage, status } = useChat<UIMessage>({
+  const { messages, sendMessage, status } = useChat<ToolAwareMessage>({
     id: session.conversation.id,
     messages: initialMessages,
     onError: (error) => {
@@ -202,6 +205,77 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   });
 
   const isLoading = status === "streaming" || status === "submitted";
+  const toolAwareMessages = messages as ToolAwareMessage[];
+  const canvasDocuments = useMemo<CanvasDocument[]>(() => {
+    const docs = new Map<string, CanvasDocument>();
+    for (const message of toolAwareMessages) {
+      message.parts?.forEach((part) => {
+        const document = extractDocumentFromPart(part);
+        if (!document) return;
+        const lookupKey = document.toolCallId ?? document.id;
+        docs.set(lookupKey, document);
+      });
+    }
+    return Array.from(docs.values());
+  }, [toolAwareMessages]);
+
+  const documentLookup = useMemo<Partial<Record<string, CanvasDocument>>>(() => {
+    return canvasDocuments.reduce<Partial<Record<string, CanvasDocument>>>((acc, doc) => {
+      if (doc.toolCallId) {
+        acc[doc.toolCallId] = doc;
+      }
+      acc[doc.id] = doc;
+      return acc;
+    }, {});
+  }, [canvasDocuments]);
+
+  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [isCanvasMinimized, setIsCanvasMinimized] = useState(false);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const documentCountRef = useRef(0);
+
+  useEffect(() => {
+    if (!canvasDocuments.length) {
+      setIsCanvasOpen(false);
+      setIsCanvasMinimized(false);
+      setActiveDocumentId(null);
+      documentCountRef.current = 0;
+      return;
+    }
+
+    const latest = canvasDocuments[canvasDocuments.length - 1];
+    if (!activeDocumentId) {
+      setActiveDocumentId(latest.id);
+    }
+
+    if (canvasDocuments.length > documentCountRef.current) {
+      setIsCanvasOpen(true);
+      setIsCanvasMinimized(false);
+      setActiveDocumentId(latest.id);
+    } else if (activeDocumentId && !canvasDocuments.some((doc) => doc.id === activeDocumentId)) {
+      setActiveDocumentId(latest.id);
+    }
+
+    documentCountRef.current = canvasDocuments.length;
+  }, [canvasDocuments, activeDocumentId]);
+
+  const activeDocument = useMemo(() => {
+    if (!activeDocumentId) return null;
+    return canvasDocuments.find((doc) => doc.id === activeDocumentId) ?? null;
+  }, [canvasDocuments, activeDocumentId]);
+
+  const handleSelectDocument = useCallback((documentId: string) => {
+    setActiveDocumentId(documentId);
+    setIsCanvasOpen(true);
+    setIsCanvasMinimized(false);
+  }, []);
+
+  const workspaceStyle = useMemo<CSSProperties | undefined>(() => {
+    if (isCanvasOpen && !isCanvasMinimized) {
+      return { paddingRight: "min(640px, 50vw)" };
+    }
+    return undefined;
+  }, [isCanvasOpen, isCanvasMinimized]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -350,11 +424,13 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     session.usage.daily.remaining <= 0 || session.usage.chat.remaining <= 0 || isLoading;
 
   return (
-    <section className="flex flex-1 flex-col h-full relative">
+    <section className="flex flex-1 flex-col h-full relative" style={workspaceStyle}>
       <div className="flex-1 overflow-y-auto">
         <MessageList
-          messages={messages}
+          messages={toolAwareMessages}
           isStreaming={isLoading}
+          onSelectDocument={handleSelectDocument}
+          documentLookup={documentLookup}
         />
       </div>
 
@@ -376,6 +452,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
           onSearchToggle={() => setIsSearchEnabled(!isSearchEnabled)}
         />
       </div>
+
+      <CanvasPanel
+        document={activeDocument}
+        isOpen={isCanvasOpen}
+        isMinimized={isCanvasMinimized}
+        onClose={() => setIsCanvasOpen(false)}
+        onMinimize={() => setIsCanvasMinimized(true)}
+        onExpand={() => setIsCanvasMinimized(false)}
+      />
     </section>
   );
 }
@@ -441,4 +526,31 @@ function getTextContent(message: UIMessage): string {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((part) => (part as any).text)
     .join("");
+}
+
+const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
+
+type DocumentToolPart = UIPart & {
+  type: typeof DOCUMENT_PART_TYPE;
+  toolCallId?: string;
+  state?: string;
+  output?: unknown;
+};
+
+function extractDocumentFromPart(part: UIPart | undefined): CanvasDocument | null {
+  if (!part || part.type !== DOCUMENT_PART_TYPE) {
+    return null;
+  }
+  const docPart = part as DocumentToolPart;
+  if (docPart.state && docPart.state !== "output-available") {
+    return null;
+  }
+  if (!docPart.output || !isGeneratedDocument(docPart.output)) {
+    return null;
+  }
+  const toolCallId = docPart.toolCallId ?? docPart.output.id;
+  return {
+    ...docPart.output,
+    toolCallId,
+  };
 }

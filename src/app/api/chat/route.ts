@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { convertToCoreMessages as convertToModelMessages, streamText, type UIMessage } from "ai";
+import { convertToCoreMessages as convertToModelMessages, streamText, tool, type UIMessage } from "ai";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
@@ -16,6 +16,13 @@ import {
   assertCanSendMessage,
   assertCanStartChat,
 } from "@/lib/rateLimiter";
+import {
+  DOCUMENT_TOOL_NAME,
+  documentInputSchema,
+  generatedDocumentSchema,
+  type DocumentInput,
+  type GeneratedDocument,
+} from "@/lib/canvas/documents";
 
 export const runtime = "edge";
 export const preferredRegion = ["bom1", "sin1", "fra1"];
@@ -64,7 +71,23 @@ export async function POST(req: Request) {
     const result = await streamText({
       model: openAIProvider(selectedModel.providerModelId),
       messages: modelMessages,
+      system: systemPrompt,
       abortSignal: req.signal,
+      tools: {
+        [DOCUMENT_TOOL_NAME]: tool<DocumentInput, GeneratedDocument>({
+          description:
+            "Create a structured document (resume, cover letter, short report, or essay) that will be shown inside the canvas artifact.",
+          inputSchema: documentInputSchema,
+          async execute(rawDocument) {
+            const document = generatedDocumentSchema.parse({
+              ...rawDocument,
+              id: crypto.randomUUID(),
+              createdAt: new Date().toISOString(),
+            });
+            return document;
+          },
+        }),
+      },
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +122,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unknown error" }, { status: 500 });
   }
 }
+
+const systemPrompt = `You are SportsNaukri's expert career assistant.
+Respond conversationally for standard coaching or Q&A.
+When the user explicitly asks for a structured asset (resume, cover letter, report, essay) or when a structured document would clearly help, call the ${DOCUMENT_TOOL_NAME} tool exactly once and summarize the output in the live chat instead of pasting the whole document.
+Only output plain chat responses outside of the tool.`;
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];
 

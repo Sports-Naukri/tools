@@ -1,5 +1,7 @@
 import Dexie, { type Table } from "dexie";
 
+import type { CanvasDocument } from "@/lib/canvas/documents";
+
 export type StoredAttachment = {
   id: string;
   name: string;
@@ -15,6 +17,7 @@ export type StoredMessage = {
   content: string;
   createdAt: string;
   attachments?: StoredAttachment[];
+  documents?: CanvasDocument[];
   error?: string | null;
 };
 

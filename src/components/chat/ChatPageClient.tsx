@@ -200,8 +200,14 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const [composerError, setComposerError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
-  const persistedMessageContents = useRef(
-    new Map(session.messages.map((message) => [message.id, message.content ?? ""]))
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const persistedMessageSnapshots = useRef(
+    new Map(
+      session.messages.map((message) => [
+        message.id,
+        buildPersistenceSnapshot(message.content ?? "", message.documents ?? []),
+      ])
+    )
   );
 
   const initialMessages = useMemo<ToolAwareMessage[]>(
@@ -382,10 +388,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       const pendingSaves = candidates
         .map((message) => {
           const normalizedContent = getTextContent(message);
-          return { message, content: normalizedContent };
+          const documents = extractDocumentsFromMessage(message);
+          const snapshot = buildPersistenceSnapshot(normalizedContent, documents);
+          return { message, content: normalizedContent, documents, snapshot };
         })
-        .filter(({ content }) => content.length > 0)
-        .filter(({ message, content }) => persistedMessageContents.current.get(message.id) !== content);
+        .filter(({ content, documents }) => content.length > 0 || documents.length > 0)
+        .filter(({ message, snapshot }) => persistedMessageSnapshots.current.get(message.id) !== snapshot);
 
       if (!pendingSaves.length) {
         return;
@@ -394,15 +402,16 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       await ensureConversationPersisted();
       let titleUpdated = false;
 
-      for (const { message, content } of pendingSaves) {
+      for (const { message, content, documents, snapshot } of pendingSaves) {
         await saveMessage({
           id: message.id,
           conversationId: session.conversation.id,
           role: message.role,
           content,
+          documents: documents.length ? documents.map(cloneDocument) : undefined,
           createdAt: new Date().toISOString(),
         });
-        persistedMessageContents.current.set(message.id, content);
+        persistedMessageSnapshots.current.set(message.id, snapshot);
 
         if (!titleUpdated && message.role === "user" && isPlaceholderTitle(session.conversation.title)) {
           const updatedConversation: StoredConversation = {
@@ -488,9 +497,18 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const chatDisabled =
     session.usage.daily.remaining <= 0 || session.usage.chat.remaining <= 0 || isLoading;
 
+  useEffect(() => {
+    const node = scrollContainerRef.current;
+    if (!node) {
+      return;
+    }
+    // Keep the newest exchange in view whenever content or streaming status changes.
+    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+  }, [displayMessages, isLoading]);
+
   return (
     <section className="flex flex-1 flex-col h-full relative" style={workspaceStyle}>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
         <MessageList
           messages={displayMessages}
           isStreaming={isLoading}
@@ -551,6 +569,8 @@ function deriveTitle(content: string) {
   return `${trimmed.slice(0, 47)}…`;
 }
 
+const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
+
 function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
   const parts: UIPart[] = [];
 
@@ -568,6 +588,19 @@ function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
           name: attachment.name,
           mimeType: attachment.type,
           mediaType: attachment.type,
+        } as UIPart
+      );
+    }
+  }
+
+  if (message.documents?.length) {
+    for (const document of message.documents) {
+      parts.push(
+        {
+          type: DOCUMENT_PART_TYPE,
+          toolCallId: document.toolCallId ?? document.id,
+          state: "output-available",
+          output: cloneDocument(document),
         } as UIPart
       );
     }
@@ -608,8 +641,6 @@ function getTextContent(message: UIMessage): string {
   return "";
 }
 
-const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
-
 type DocumentToolPart = UIPart & {
   type: typeof DOCUMENT_PART_TYPE;
   toolCallId?: string;
@@ -633,6 +664,30 @@ function extractDocumentFromPart(part: UIPart | undefined): CanvasDocument | nul
     ...docPart.output,
     toolCallId,
   };
+}
+
+function extractDocumentsFromMessage(message: UIMessage): CanvasDocument[] {
+  if (!message.parts?.length) {
+    return [];
+  }
+  return message.parts
+    .map((part) => extractDocumentFromPart(part))
+    .filter((document): document is CanvasDocument => Boolean(document))
+    .map((document) => cloneDocument(document));
+}
+
+function cloneDocument(document: CanvasDocument): CanvasDocument {
+  return {
+    ...document,
+    content: document.content.map((section) => ({ ...section })),
+  };
+}
+
+function buildPersistenceSnapshot(content: string, documents: CanvasDocument[]): string {
+  return JSON.stringify({
+    content,
+    documents,
+  });
 }
 
 const CHAT_TITLE_COUNTER_KEY = "sn-chat-title-counter";

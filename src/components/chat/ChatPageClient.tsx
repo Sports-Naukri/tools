@@ -233,31 +233,54 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const [isCanvasMinimized, setIsCanvasMinimized] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const documentCountRef = useRef(0);
+  const lastDocumentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!canvasDocuments.length) {
-      setIsCanvasOpen(false);
-      setIsCanvasMinimized(false);
-      setActiveDocumentId(null);
-      documentCountRef.current = 0;
+    const docCount = canvasDocuments.length;
+    const latest = docCount ? canvasDocuments[docCount - 1] : null;
+    const previousCount = documentCountRef.current;
+    const previousLatestId = lastDocumentIdRef.current;
+    const didCountChange = docCount !== previousCount;
+    const didLatestChange = (latest?.id ?? null) !== previousLatestId;
+
+    if (!didCountChange && !didLatestChange) {
       return;
     }
 
-    const latest = canvasDocuments[canvasDocuments.length - 1];
-    if (!activeDocumentId) {
-      setActiveDocumentId(latest.id);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[canvasDocuments effect]", {
+        docCount,
+        previousCount,
+        latestId: latest?.id ?? null,
+        previousLatestId,
+        didCountChange,
+        didLatestChange,
+      });
     }
 
-    if (canvasDocuments.length > documentCountRef.current) {
+    documentCountRef.current = docCount;
+    lastDocumentIdRef.current = latest?.id ?? null;
+
+    if (docCount === 0) {
+      setIsCanvasOpen(false);
+      setIsCanvasMinimized(false);
+      setActiveDocumentId(null);
+      return;
+    }
+
+    setActiveDocumentId((prev) => {
+      if (!prev) {
+        return latest!.id;
+      }
+      const stillExists = canvasDocuments.some((doc) => doc.id === prev);
+      return stillExists ? prev : latest!.id;
+    });
+
+    if (docCount > previousCount) {
       setIsCanvasOpen(true);
       setIsCanvasMinimized(false);
-      setActiveDocumentId(latest.id);
-    } else if (activeDocumentId && !canvasDocuments.some((doc) => doc.id === activeDocumentId)) {
-      setActiveDocumentId(latest.id);
     }
-
-    documentCountRef.current = canvasDocuments.length;
-  }, [canvasDocuments, activeDocumentId]);
+  }, [canvasDocuments]);
 
   const activeDocument = useMemo(() => {
     if (!activeDocumentId) return null;

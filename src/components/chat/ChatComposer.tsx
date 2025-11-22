@@ -40,7 +40,7 @@ export function ChatComposer({
   modelId,
   onModelChange,
   isSearchEnabled,
-  onSearchToggle,
+  onSearchToggle: _onSearchToggle,
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
@@ -166,21 +166,20 @@ export function ChatComposer({
               Low
             </button>
 
-            <button 
-              type="button" 
-              onClick={onSearchToggle}
+            <button
+              type="button"
+              aria-disabled="true"
+              title="Search coming soon"
               className={clsx(
                 "group flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors border",
-                isSearchEnabled 
-                  ? "bg-blue-50 text-[#006dff] border-blue-200" 
-                  : "text-slate-500 hover:text-[#006dff] hover:bg-blue-50 hover:border-blue-200 border-slate-200"
+                "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100 hover:text-slate-500"
               )}
             >
               <div className="relative">
                 <Globe className="h-3 w-3" />
                 {!isSearchEnabled && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-[150%] h-[1.5px] bg-slate-500 group-hover:bg-[#006dff] rotate-45 transition-colors" />
+                    <div className="w-[150%] h-[1.5px] bg-slate-500 group-hover:bg-slate-400 rotate-45 transition-colors" />
                   </div>
                 )}
               </div>

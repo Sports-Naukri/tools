@@ -22,7 +22,6 @@ type ChatComposerProps = {
   modelId?: string;
   onModelChange?: (modelId: string) => void;
   isSearchEnabled?: boolean;
-  onSearchToggle?: () => void;
 };
 
 export function ChatComposer({
@@ -40,7 +39,6 @@ export function ChatComposer({
   modelId,
   onModelChange,
   isSearchEnabled,
-  onSearchToggle: _onSearchToggle,
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);

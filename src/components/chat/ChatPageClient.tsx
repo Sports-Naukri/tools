@@ -195,7 +195,7 @@ type UIPart = NonNullable<UIMessage["parts"]>[number];
 
 function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage, refreshHistory }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
-  const [isSearchEnabled, setIsSearchEnabled] = useState(false);
+  const isSearchEnabled = false;
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -514,7 +514,6 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
           modelId={modelId}
           onModelChange={setModelId}
           isSearchEnabled={isSearchEnabled}
-          onSearchToggle={() => setIsSearchEnabled(!isSearchEnabled)}
         />
       </div>
 

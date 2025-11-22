@@ -18,55 +18,23 @@ export type ChatModel = {
 
 export const CHAT_MODELS: ChatModel[] = [
   {
-    id: "chatgpt-flash",
+    id: "standard",
     vendor: "openai",
-    name: "ChatGPT Flash",
-    description: "Fastest ChatGPT tier for general use",
-    providerModelId: "gpt-4.1-mini",
+    name: "Standard",
+    description: "Balanced SportsNaukri coach (GPT-5 Nano)",
+    providerModelId: "gpt-5-nano",
     isEnabled: true,
   },
   {
-    id: "chatgpt-lite",
+    id: "advanced",
     vendor: "openai",
-    name: "ChatGPT Lite",
-    description: "Lower-cost ChatGPT option for lighter prompts",
-    providerModelId: "gpt-4o-mini",
-    isEnabled: true,
-  },
-  {
-    id: "gemini-25-flash",
-    vendor: "google",
-    name: "Gemini 2.5 Flash",
-    description: "Google’s multimodal flagship (coming soon)",
-    providerModelId: "gemini-2.5-flash",
-    isEnabled: false,
-  },
-  {
-    id: "gemini-25-lite",
-    vendor: "google",
-    name: "Gemini 2.5 Lite",
-    description: "Efficiency tuned Gemini (coming soon)",
-    providerModelId: "gemini-2.5-flash-lite",
-    isEnabled: false,
-  },
-  {
-    id: "llama-3-70b",
-    vendor: "meta",
-    name: "Llama 3 70B",
-    description: "Open model for long reasoning",
-    providerModelId: "llama-3-70b",
-    isEnabled: false,
-  },
-  {
-    id: "mistral-large",
-    vendor: "mistral",
-    name: "Mistral Large",
-    description: "High-performance open alternative",
-    providerModelId: "mistral-large",
+    name: "Advanced",
+    description: "Coming soon: deeper reasoning mode",
+    providerModelId: "gpt-5.1",
     isEnabled: false,
   },
 ];
 
-export const DEFAULT_CHAT_MODEL_ID = "chatgpt-flash";
+export const DEFAULT_CHAT_MODEL_ID = "standard";
 
 export const ENABLED_MODEL_IDS = CHAT_MODELS.filter((model) => model.isEnabled).map((model) => model.id);

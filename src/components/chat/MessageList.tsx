@@ -65,7 +65,7 @@ function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBub
         className={clsx(
           "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
           isUser 
-            ? "bg-black text-white rounded-br-sm" 
+            ? "bg-[#006dff] text-white rounded-br-sm" 
             : "bg-transparent text-slate-900 px-0 py-0"
         )}
       >
@@ -97,7 +97,7 @@ function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBub
         })}
       </div>
       {isUser && (
-        <div className="shrink-0 mt-1 h-8 w-8 rounded-full bg-black flex items-center justify-center text-white">
+        <div className="shrink-0 mt-1 h-8 w-8 rounded-full bg-[#006dff] flex items-center justify-center text-white">
           <User className="h-5 w-5" />
         </div>
       )}

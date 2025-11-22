@@ -55,13 +55,16 @@ export async function upsertConversation(conversation: StoredConversation) {
 
 export async function saveMessage(message: StoredMessage) {
   await chatDb.transaction("rw", chatDb.messages, chatDb.conversations, async () => {
+    const previouslySaved = await chatDb.messages.get(message.id);
     await chatDb.messages.put(message);
-    const existing = await chatDb.conversations.get(message.conversationId);
-    if (existing) {
+    const existingConversation = await chatDb.conversations.get(message.conversationId);
+    if (existingConversation) {
+      const increment = previouslySaved ? 0 : 1;
+      // Streaming updates can rewrite the same message id; only bump counts for brand-new ids.
       await chatDb.conversations.put({
-        ...existing,
+        ...existingConversation,
         updatedAt: new Date().toISOString(),
-        messageCount: existing.messageCount + 1,
+        messageCount: existingConversation.messageCount + increment,
       });
     }
   });

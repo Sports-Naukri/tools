@@ -200,7 +200,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const [composerError, setComposerError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
-  const persistedIds = useRef(new Set(session.messages.map((message) => message.id)));
+  const persistedMessageContents = useRef(
+    new Map(session.messages.map((message) => [message.id, message.content ?? ""]))
+  );
 
   const initialMessages = useMemo<ToolAwareMessage[]>(
     () => session.messages.map(convertStoredMessageToUIMessage) as ToolAwareMessage[],
@@ -227,6 +229,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
 
   const isLoading = status === "streaming" || status === "submitted";
   const toolAwareMessages = messages as ToolAwareMessage[];
+  const displayMessages = useMemo(() => toolAwareMessages.map(ensureDocumentSummaryInMessage), [toolAwareMessages]);
   const canvasDocuments = useMemo<CanvasDocument[]>(() => {
     const docs = new Map<string, CanvasDocument>();
     for (const message of toolAwareMessages) {
@@ -372,32 +375,48 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   }, [session, refreshHistory]);
 
   useEffect(() => {
-    const persistNewMessages = async () => {
-      const unsaved = messages.filter((message) => !persistedIds.current.has(message.id));
-      if (!unsaved.length) return;
+    // Save only when the streamed message has meaningful text so assistant replies persist after reloads.
+    const persistLatestMessages = async () => {
+      const candidates = messages.filter((message) => isSupportedRole(message.role));
+
+      const pendingSaves = candidates
+        .map((message) => {
+          const normalizedContent = getTextContent(message);
+          return { message, content: normalizedContent };
+        })
+        .filter(({ content }) => content.length > 0)
+        .filter(({ message, content }) => persistedMessageContents.current.get(message.id) !== content);
+
+      if (!pendingSaves.length) {
+        return;
+      }
+
       await ensureConversationPersisted();
-      for (const message of unsaved) {
-        if (!isSupportedRole(message.role)) continue;
+      let titleUpdated = false;
+
+      for (const { message, content } of pendingSaves) {
         await saveMessage({
           id: message.id,
           conversationId: session.conversation.id,
           role: message.role,
-          content: getTextContent(message),
+          content,
           createdAt: new Date().toISOString(),
         });
-        persistedIds.current.add(message.id);
-      }
-      const firstUserMessage = unsaved.find((message) => message.role === "user");
-      if (firstUserMessage && isPlaceholderTitle(session.conversation.title)) {
-        const updatedConversation: StoredConversation = {
-          ...session.conversation,
-          title: deriveTitle(getTextContent(firstUserMessage)),
-        };
-        await updateConversationMeta(session.conversation.id, { title: updatedConversation.title });
-        onConversationUpdate(updatedConversation);
+        persistedMessageContents.current.set(message.id, content);
+
+        if (!titleUpdated && message.role === "user" && isPlaceholderTitle(session.conversation.title)) {
+          const updatedConversation: StoredConversation = {
+            ...session.conversation,
+            title: deriveTitle(content),
+          };
+          await updateConversationMeta(session.conversation.id, { title: updatedConversation.title });
+          onConversationUpdate(updatedConversation);
+          titleUpdated = true;
+        }
       }
     };
-    persistNewMessages().catch((err) => console.error(err));
+
+    persistLatestMessages().catch((err) => console.error(err));
   }, [messages, onConversationUpdate, session?.conversation, ensureConversationPersisted]);
 
   const handleFileSelect = useCallback(
@@ -473,7 +492,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     <section className="flex flex-1 flex-col h-full relative" style={workspaceStyle}>
       <div className="flex-1 overflow-y-auto">
         <MessageList
-          messages={toolAwareMessages}
+          messages={displayMessages}
           isStreaming={isLoading}
           onSelectDocument={handleSelectDocument}
           documentLookup={documentLookup}
@@ -568,12 +587,26 @@ function isSupportedRole(role: UIMessage["role"]): role is "user" | "assistant" 
   return SUPPORTED_ROLES.has(role);
 }
 
+const TEXT_PART_TYPES = new Set(["text", "output_text"]);
+
 function getTextContent(message: UIMessage): string {
-  return message.parts
-    .filter((part) => part.type === "text")
+  const normalized = ensureDocumentSummaryInMessage(message);
+  const textParts = (normalized.parts ?? [])
+    .filter((part) => TEXT_PART_TYPES.has(part.type))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((part) => (part as any).text)
-    .join("");
+    .join("")
+    .trim();
+
+  if (textParts.length > 0) {
+    return textParts;
+  }
+
+  if (typeof (message as { content?: string }).content === "string") {
+    return (message as { content?: string }).content ?? "";
+  }
+
+  return "";
 }
 
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
@@ -612,13 +645,39 @@ function getNextChatTitle() {
 }
 
 function incrementChatCounter() {
-  if (typeof window === "undefined") {
-    return 1;
-  }
   const current = getStoredChatCounter();
   const next = current + 1;
-  window.localStorage.setItem(CHAT_TITLE_COUNTER_KEY, String(next));
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(CHAT_TITLE_COUNTER_KEY, String(next));
+  }
   return next;
+}
+
+function ensureDocumentSummaryInMessage<T extends UIMessage>(message: T): T {
+  const parts = message.parts ?? [];
+  const hasDocumentPart = parts.some((part) => Boolean(extractDocumentFromPart(part)));
+  if (!hasDocumentPart) {
+    return message;
+  }
+  const hasTextSummary = parts.some((part) => TEXT_PART_TYPES.has(part.type));
+  if (hasTextSummary) {
+    return message;
+  }
+  const document = parts.reduce<CanvasDocument | null>((acc, part) => acc ?? extractDocumentFromPart(part), null);
+  if (!document) {
+    return message;
+  }
+  const summary = buildDocumentSummary(document);
+  const nextParts = [...parts, { type: "text", text: summary } as UIPart];
+  return { ...message, parts: nextParts } as T;
+}
+
+function buildDocumentSummary(document: CanvasDocument): string {
+  const readableType = document.type.replace(/_/g, " ");
+  if (document.title?.trim()) {
+    return `Generated ${readableType} titled "${document.title.trim()}".`;
+  }
+  return `Generated ${readableType}.`;
 }
 
 function getStoredChatCounter() {

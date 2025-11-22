@@ -20,6 +20,7 @@ import {
   DOCUMENT_TOOL_NAME,
   documentInputSchema,
   generatedDocumentSchema,
+  isGeneratedDocument,
   type DocumentInput,
   type GeneratedDocument,
 } from "@/lib/canvas/documents";
@@ -58,8 +59,9 @@ export async function POST(req: Request) {
     }
 
     const sanitizedAttachments = ensureValidAttachments(payload.attachments);
-    const uiMessages = attachUploadsToMessages(payload.messages, sanitizedAttachments);
-    const modelMessages = convertToModelMessages(uiMessages as UIMessage[]);
+    const sanitizedMessages = sanitizeUiMessages(payload.messages);
+    const uiMessages = attachUploadsToMessages(sanitizedMessages, sanitizedAttachments);
+    const modelMessages = convertToModelMessages(uiMessages as UIMessage[]).filter(isSupportedModelMessage);
 
     console.log("/api/chat env", {
       hasKey: Boolean(process.env.OPENAI_API_KEY?.trim()),
@@ -201,4 +203,101 @@ function findLastUserMessage(messages: UIMessage[]): UIMessage | null {
     }
   }
   return null;
+}
+
+const SUPPORTED_ROLES = new Set(["user", "assistant", "system", "tool"]);
+
+function sanitizeUiMessages(messages: ChatRequestPayload["messages"]): ChatRequestPayload["messages"] {
+  return messages
+    .filter((message) => SUPPORTED_ROLES.has(message.role))
+    .map((message) => sanitizeUiMessage(message));
+}
+
+function sanitizeUiMessage(message: ChatRequestPayload["messages"][number]): ChatRequestPayload["messages"][number] {
+  if (!message.parts || message.parts.length === 0) {
+    return { ...message };
+  }
+  const filteredParts = message.parts
+    .map((part) => normalizePart(part))
+    .filter((part): part is UIPart => Boolean(part));
+
+  const sanitized: ChatRequestPayload["messages"][number] = {
+    ...message,
+    parts: filteredParts.length ? filteredParts : undefined,
+  };
+
+  const derivedText = getTextFromParts(filteredParts);
+  if (derivedText) {
+    sanitized.content = derivedText;
+  }
+
+  if (!sanitized.parts) {
+    delete sanitized.parts;
+  }
+
+  return sanitized;
+}
+
+function getTextFromParts(parts: UIPart[]): string {
+  return parts
+    .map((part) => {
+      const type = (part as { type?: string }).type;
+      if (type === "text" || type === "output_text") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (part as any).text ?? "";
+      }
+      return "";
+    })
+    .join("")
+    .trim();
+}
+
+const ALLOWED_PART_TYPES = new Set(["text", "output_text", "file"]);
+const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
+
+function normalizePart(part: unknown): UIPart | null {
+  if (!part || typeof part !== "object") {
+    return null;
+  }
+  const candidate = part as UIPart & DocumentToolPart;
+  if (candidate.type && ALLOWED_PART_TYPES.has(candidate.type)) {
+    return { ...candidate } as UIPart;
+  }
+  if (isDocumentToolPart(candidate)) {
+    const summary = summarizeDocumentPart(candidate);
+    if (summary) {
+      return { type: "text", text: summary } as UIPart;
+    }
+  }
+  return null;
+}
+
+function isSupportedModelMessage(message: unknown) {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const candidate = message as { role?: string };
+  return typeof candidate.role === "string";
+}
+
+type DocumentToolPart = {
+  type?: string;
+  output?: unknown;
+};
+
+function isDocumentToolPart(part: DocumentToolPart): part is DocumentToolPart & { type: string } {
+  return Boolean(part.type === DOCUMENT_PART_TYPE && part.output);
+}
+
+function summarizeDocumentPart(part: DocumentToolPart): string | null {
+  if (!part.output || !isGeneratedDocument(part.output)) {
+    return null;
+  }
+  const document = part.output;
+  const readableType = document.type.replace(/_/g, " ");
+  const title = document.title?.trim();
+  if (title && title.length > 0) {
+    return `Generated ${readableType} titled "${title}".`;
+  }
+  return `Generated ${readableType}.`;
 }

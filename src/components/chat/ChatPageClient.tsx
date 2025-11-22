@@ -43,10 +43,13 @@ export function ChatPageClient() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshHistory = useCallback(async () => {
+  const refreshHistory = useCallback(async (): Promise<StoredConversation[]> => {
     const conversations = await listConversations(20);
+    syncChatTitleCounter(conversations);
     setHistory(conversations);
+    return conversations;
   }, []);
+
 
   const loadUsage = useCallback(async (conversationId?: string) => {
     const params = new URLSearchParams();
@@ -65,6 +68,7 @@ export function ChatPageClient() {
       latest ??
       (await createEmptyConversation({
         modelId: DEFAULT_CHAT_MODEL_ID,
+        persist: false,
       }));
     const messages = await getMessages(conversation.id);
     const usage = await loadUsage(conversation.id);
@@ -102,12 +106,19 @@ export function ChatPageClient() {
     [loadUsage, session?.conversation.id]
   );
 
+  const startBlankConversation = useCallback(
+    async (modelId: string = DEFAULT_CHAT_MODEL_ID) => {
+      const conversation = await createEmptyConversation({ modelId, persist: false });
+      const usage = await loadUsage(conversation.id);
+      setSession({ conversation, messages: [], usage });
+      return conversation;
+    },
+    [loadUsage]
+  );
+
   const handleNewChat = useCallback(async () => {
-    const conversation = await createEmptyConversation({ modelId: DEFAULT_CHAT_MODEL_ID });
-    const usage = await loadUsage(conversation.id);
-    setSession({ conversation, messages: [], usage });
-    await refreshHistory();
-  }, [loadUsage, refreshHistory]);
+    await startBlankConversation(DEFAULT_CHAT_MODEL_ID);
+  }, [startBlankConversation]);
 
   const handleConversationUpdate = useCallback(
     async (updated: StoredConversation) => {
@@ -120,12 +131,20 @@ export function ChatPageClient() {
   const handleDeleteConversation = useCallback(
     async (conversationId: string) => {
       await deleteConversation(conversationId);
-      await refreshHistory();
-      if (session?.conversation.id === conversationId) {
-        await handleNewChat();
+      const conversations = await refreshHistory();
+      if (session?.conversation.id !== conversationId) {
+        return;
+      }
+      if (conversations && conversations.length > 0) {
+        const nextConversation = conversations[0];
+        const messages = await getMessages(nextConversation.id);
+        const usage = await loadUsage(nextConversation.id);
+        setSession({ conversation: nextConversation, messages, usage });
+      } else {
+        await startBlankConversation(DEFAULT_CHAT_MODEL_ID);
       }
     },
-    [refreshHistory, session?.conversation.id, handleNewChat]
+    [loadUsage, refreshHistory, session?.conversation.id, startBlankConversation]
   );
 
   if (isBootstrapping || !session) {
@@ -158,6 +177,7 @@ export function ChatPageClient() {
         onUsageChange={(usage) => setSession((prev) => (prev ? { ...prev, usage } : prev))}
         onConversationUpdate={handleConversationUpdate}
         loadUsage={loadUsage}
+        refreshHistory={refreshHistory}
       />
     </div>
   );
@@ -168,11 +188,12 @@ type ChatWorkspaceProps = {
   onUsageChange: (usage: UsageSnapshot) => void;
   onConversationUpdate: (conversation: StoredConversation) => void;
   loadUsage: (conversationId: string) => Promise<UsageSnapshot>;
+  refreshHistory: () => Promise<StoredConversation[]>;
 };
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];
 
-function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage }: ChatWorkspaceProps) {
+function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage, refreshHistory }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
   const [isSearchEnabled, setIsSearchEnabled] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
@@ -245,17 +266,6 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
 
     if (!didCountChange && !didLatestChange) {
       return;
-    }
-
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[canvasDocuments effect]", {
-        docCount,
-        previousCount,
-        latestId: latest?.id ?? null,
-        previousLatestId,
-        didCountChange,
-        didLatestChange,
-      });
     }
 
     documentCountRef.current = docCount;
@@ -349,10 +359,23 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     setInput("");
   };
 
+  const ensureConversationPersisted = useCallback(async () => {
+    if (!session) {
+      return;
+    }
+    const existing = await getConversation(session.conversation.id);
+    if (existing) {
+      return;
+    }
+    await createConversation(session.conversation);
+    await refreshHistory();
+  }, [session, refreshHistory]);
+
   useEffect(() => {
     const persistNewMessages = async () => {
       const unsaved = messages.filter((message) => !persistedIds.current.has(message.id));
       if (!unsaved.length) return;
+      await ensureConversationPersisted();
       for (const message of unsaved) {
         if (!isSupportedRole(message.role)) continue;
         await saveMessage({
@@ -365,7 +388,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
         persistedIds.current.add(message.id);
       }
       const firstUserMessage = unsaved.find((message) => message.role === "user");
-      if (firstUserMessage && !session.conversation.title) {
+      if (firstUserMessage && isPlaceholderTitle(session.conversation.title)) {
         const updatedConversation: StoredConversation = {
           ...session.conversation,
           title: deriveTitle(getTextContent(firstUserMessage)),
@@ -375,7 +398,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       }
     };
     persistNewMessages().catch((err) => console.error(err));
-  }, [messages, onConversationUpdate, session.conversation]);
+  }, [messages, onConversationUpdate, session?.conversation, ensureConversationPersisted]);
 
   const handleFileSelect = useCallback(
     async (files: FileList | null) => {
@@ -488,17 +511,19 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   );
 }
 
-async function createEmptyConversation({ modelId }: { modelId: string }) {
+async function createEmptyConversation({ modelId, persist = true }: { modelId: string; persist?: boolean }) {
   const now = new Date().toISOString();
   const conversation: StoredConversation = {
     id: nanoid(10),
-    title: "New chat",
+    title: getNextChatTitle(),
     modelId,
     createdAt: now,
     updatedAt: now,
     messageCount: 0,
   };
-  await createConversation(conversation);
+  if (persist) {
+    await createConversation(conversation);
+  }
   return conversation;
 }
 
@@ -576,4 +601,60 @@ function extractDocumentFromPart(part: UIPart | undefined): CanvasDocument | nul
     ...docPart.output,
     toolCallId,
   };
+}
+
+const CHAT_TITLE_COUNTER_KEY = "sn-chat-title-counter";
+const CHAT_PLACEHOLDER_REGEX = /^chat\s+(\d+)$/i;
+
+function getNextChatTitle() {
+  const nextValue = incrementChatCounter();
+  return `Chat ${nextValue}`;
+}
+
+function incrementChatCounter() {
+  if (typeof window === "undefined") {
+    return 1;
+  }
+  const current = getStoredChatCounter();
+  const next = current + 1;
+  window.localStorage.setItem(CHAT_TITLE_COUNTER_KEY, String(next));
+  return next;
+}
+
+function getStoredChatCounter() {
+  if (typeof window === "undefined") {
+    return 0;
+  }
+  const raw = window.localStorage.getItem(CHAT_TITLE_COUNTER_KEY);
+  const parsed = raw ? Number.parseInt(raw, 10) : 0;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function syncChatTitleCounter(conversations: StoredConversation[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const maxPlaceholder = conversations.reduce((max, conversation) => {
+    const match = conversation.title?.match(CHAT_PLACEHOLDER_REGEX);
+    if (!match) {
+      return max;
+    }
+    const value = Number.parseInt(match[1], 10);
+    return Number.isFinite(value) ? Math.max(max, value) : max;
+  }, 0);
+  const stored = getStoredChatCounter();
+  if (maxPlaceholder > stored) {
+    window.localStorage.setItem(CHAT_TITLE_COUNTER_KEY, String(maxPlaceholder));
+  }
+}
+
+function isPlaceholderTitle(title?: string | null) {
+  if (!title) {
+    return true;
+  }
+  const trimmed = title.trim();
+  if (!trimmed) {
+    return true;
+  }
+  return trimmed.toLowerCase() === "new chat" || CHAT_PLACEHOLDER_REGEX.test(trimmed);
 }

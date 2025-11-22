@@ -69,7 +69,7 @@ export function ChatSidebar({
           onClick={onNewChat}
           className={clsx(
             "flex items-center justify-center gap-2 rounded-lg bg-[#006dff] text-sm font-medium text-white hover:bg-[#0056cc] transition-colors",
-            isCollapsed ? "h-10 w-10 p-0" : "w-full px-4 py-2.5"
+            isCollapsed ? "h-8 w-8 p-0" : "w-full px-4 py-2.5"
           )}
           title="New Chat"
         >
@@ -112,7 +112,7 @@ export function ChatSidebar({
                 onClick={() => onSelectConversation(conversation.id)}
                 className={clsx(
                   "flex-1 text-left text-sm py-2",
-                  isCollapsed ? "flex justify-center px-0" : "px-3"
+                  isCollapsed ? "flex justify-center items-center h-10 w-10" : "px-3"
                 )}
                 title={conversation.title || "Untitled conversation"}
               >

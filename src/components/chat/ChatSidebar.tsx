@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState, type ChangeEvent } from "react";
 import { MessageSquare, Plus, Search, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
 import clsx from "clsx";
 
@@ -24,6 +24,23 @@ export function ChatSidebar({
   onDeleteConversation,
 }: ChatSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredConversations = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return conversations;
+    }
+    return conversations.filter((conversation) => {
+      const title = conversation.title?.toLowerCase() ?? "";
+      return title.includes(query);
+    });
+  }, [conversations, searchQuery]);
+
+  const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+  };
+  const visibleConversations = filteredConversations;
 
   return (
     <aside 
@@ -66,6 +83,8 @@ export function ChatSidebar({
             <input
               type="text"
               placeholder="Search your threads..."
+              value={searchQuery}
+              onChange={handleSearchChange}
               className="w-full rounded-lg border-none bg-transparent py-2 pl-9 pr-4 text-sm text-slate-600 placeholder:text-slate-400 focus:ring-0"
             />
           </div>
@@ -73,9 +92,13 @@ export function ChatSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 py-2 scrollbar-thin">
-        {!isCollapsed && <div className="mb-2 px-2 text-xs font-medium text-slate-500">Last 7 Days</div>}
+        {!isCollapsed && (
+          <div className="mb-2 px-2 text-xs font-medium text-slate-500">
+            {searchQuery ? "Search results" : "Last 7 Days"}
+          </div>
+        )}
         <div className="space-y-1">
-          {conversations.map((conversation) => (
+          {visibleConversations.map((conversation) => (
             <div
               key={conversation.id}
               className={clsx(
@@ -114,6 +137,11 @@ export function ChatSidebar({
               )}
             </div>
           ))}
+          {visibleConversations.length === 0 && !isCollapsed && (
+            <div className="px-3 py-4 text-xs text-slate-500">
+              {searchQuery ? "No conversations match your search." : "You have no recent conversations."}
+            </div>
+          )}
         </div>
       </div>
     </aside>

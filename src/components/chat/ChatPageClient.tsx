@@ -391,9 +391,34 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     }, {});
   }, [canvasDocuments]);
 
-  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
-  const [isCanvasMinimized, setIsCanvasMinimized] = useState(false);
-  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const STORAGE_KEY = `sn-chat-canvas-${session.conversation.id}`;
+
+  // Initialize from storage
+  const [isCanvasOpen, setIsCanvasOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored).isOpen : false;
+    } catch { return false; }
+  });
+
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored).activeDocumentId : null;
+    } catch { return null; }
+  });
+
+  // Save to storage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      isOpen: isCanvasOpen,
+      activeDocumentId
+    }));
+  }, [isCanvasOpen, activeDocumentId, session.conversation.id, STORAGE_KEY]);
+
   const documentCountRef = useRef(0);
   const lastDocumentIdRef = useRef<string | null>(null);
 
@@ -414,11 +439,18 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
 
     if (docCount === 0) {
       setIsCanvasOpen(false);
-      setIsCanvasMinimized(false);
       setActiveDocumentId(null);
       return;
     }
 
+    // If a new document was added, ALWAYS switch to it and open the canvas
+    if (docCount > previousCount) {
+      setActiveDocumentId(latest!.id);
+      setIsCanvasOpen(true);
+      return;
+    }
+
+    // Otherwise, maintain current selection if valid, or fallback to latest
     setActiveDocumentId((prev) => {
       if (!prev) {
         return latest!.id;
@@ -426,11 +458,6 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       const stillExists = canvasDocuments.some((doc) => doc.id === prev);
       return stillExists ? prev : latest!.id;
     });
-
-    if (docCount > previousCount) {
-      setIsCanvasOpen(true);
-      setIsCanvasMinimized(false);
-    }
   }, [canvasDocuments]);
 
   const activeDocument = useMemo(() => {
@@ -441,15 +468,14 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   const handleSelectDocument = useCallback((documentId: string) => {
     setActiveDocumentId(documentId);
     setIsCanvasOpen(true);
-    setIsCanvasMinimized(false);
   }, []);
 
   const workspaceStyle = useMemo<CSSProperties | undefined>(() => {
-    if (isCanvasOpen && !isCanvasMinimized) {
+    if (isCanvasOpen) {
       return { paddingRight: "min(640px, 50vw)" };
     }
     return undefined;
-  }, [isCanvasOpen, isCanvasMinimized]);
+  }, [isCanvasOpen]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -667,10 +693,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       <CanvasPanel
         document={activeDocument}
         isOpen={isCanvasOpen}
-        isMinimized={isCanvasMinimized}
         onClose={() => setIsCanvasOpen(false)}
-        onMinimize={() => setIsCanvasMinimized(true)}
-        onExpand={() => setIsCanvasMinimized(false)}
       />
     </section>
   );

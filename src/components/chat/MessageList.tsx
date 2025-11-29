@@ -16,24 +16,67 @@ export type MessageListProps = {
   // When true the latest message failed and we render an inline retry prompt.
   showRetry?: boolean;
   onRetry?: () => void;
+  onSuggestionClick?: (text: string) => void;
+  isLimitReached?: boolean;
 };
+
+const STARTER_QUESTIONS = [
+  { heading: "Resume Help", text: "Help me write a resume for a Football Coach position." },
+  { heading: "Interview Prep", text: "What are common interview questions for a Sports Analyst?" },
+  { heading: "Cover Letter", text: "Create a cover letter for a Gym Manager role." },
+  { heading: "Career Advice", text: "How do I transition from athlete to sports administration?" },
+];
 
 /**
  * Renders the list of chat messages.
  * Handles empty states, message bubbles, and loading indicators.
  */
-export function MessageList({ messages, isStreaming, onSelectDocument, documentLookup = {}, showRetry, onRetry }: MessageListProps) {
+export function MessageList({ 
+  messages, 
+  isStreaming, 
+  onSelectDocument, 
+  documentLookup = {}, 
+  showRetry, 
+  onRetry,
+  onSuggestionClick,
+  isLimitReached
+}: MessageListProps) {
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
       {messages.length === 0 && (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-4">
-          <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
-            <Bot className="h-6 w-6 text-slate-500" />
+        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-8">
+          <div className="space-y-4 flex flex-col items-center">
+            <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
+              <Bot className="h-6 w-6 text-slate-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-900">How can I help you today?</h3>
+            <p className="text-sm text-slate-500 max-w-md">
+              Ask anything about sports careers, resumes, or interview prep. Attach supporting files for richer responses.
+            </p>
           </div>
-          <h3 className="text-lg font-semibold text-slate-900">How can I help you today?</h3>
-          <p className="text-sm text-slate-500 max-w-md">
-            Ask anything about sports careers, resumes, or interview prep. Attach supporting files for richer responses.
-          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
+            {STARTER_QUESTIONS.map((q, i) => (
+              <button
+                key={i}
+                onClick={() => onSuggestionClick?.(q.text)}
+                disabled={isLimitReached}
+                className={clsx(
+                  "text-left p-4 rounded-xl border transition-all group",
+                  isLimitReached 
+                    ? "border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed" 
+                    : "border-slate-200 hover:bg-slate-50 hover:border-slate-300 bg-white"
+                )}
+              >
+                <div className={clsx("font-medium text-sm mb-1", isLimitReached ? "text-slate-400" : "text-slate-900")}>
+                  {q.heading}
+                </div>
+                <div className={clsx("text-xs", isLimitReached ? "text-slate-400" : "text-slate-500 group-hover:text-slate-600")}>
+                  {q.text}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {messages.map((message, index) => (

@@ -643,7 +643,39 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   
   // Only block if it's a new conversation AND daily limit is reached, OR if chat limit is reached for this specific chat
   const isLimitReached = (isNewConversation && dailyLimitReached) || chatLimitReached;
-  const chatDisabled = isLimitReached || isLoading;
+  const chatDisabled =
+    isLimitReached || isLoading;
+
+  const handleSuggestionClick = useCallback(async (text: string) => {
+    if (chatDisabled) return;
+
+    const pendingRequest: PendingRequest = {
+      message: {
+        role: "user",
+        parts: [{ type: "text", text } as UIPart],
+      } as ToolAwareMessage,
+      body: {
+        conversationId: session.conversation.id,
+        modelId,
+        isSearchEnabled,
+        attachments: [],
+        isNewConversation: !hasStartedRef.current,
+      },
+    };
+
+    lastRequestRef.current = pendingRequest;
+    setRetryAvailable(false);
+
+    try {
+      await sendMessage(pendingRequest.message, { body: pendingRequest.body });
+      lastRequestRef.current = null;
+    } catch (sendError) {
+      setRetryAvailable(true);
+      if (sendError instanceof Error) {
+        setComposerError(sendError.message);
+      }
+    }
+  }, [chatDisabled, session.conversation.id, modelId, isSearchEnabled, sendMessage]);
 
   useEffect(() => {
     const node = scrollContainerRef.current;
@@ -664,6 +696,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
           documentLookup={documentLookup}
           showRetry={retryAvailable}
           onRetry={handleRetry}
+          onSuggestionClick={handleSuggestionClick}
+          isLimitReached={chatDisabled}
         />
       </div>
 

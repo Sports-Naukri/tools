@@ -25,7 +25,7 @@ import {
   type GeneratedDocument,
 } from "@/lib/canvas/documents";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const preferredRegion = ["bom1", "sin1", "fra1"];
 
 const openAIProvider = createOpenAI({
@@ -61,7 +61,13 @@ export async function POST(req: Request) {
     const sanitizedAttachments = ensureValidAttachments(payload.attachments);
     const sanitizedMessages = sanitizeUiMessages(payload.messages);
     const uiMessages = attachUploadsToMessages(sanitizedMessages, sanitizedAttachments);
-    const modelMessages = convertToModelMessages(uiMessages as UIMessage[]).filter(isSupportedModelMessage);
+
+    // Truncate history to prevent excessive token usage.
+    // We keep the last 20 messages (approx 10 turns) which aligns with the chat limit.
+    // This ensures that even if a conversation is long, we don't exceed token limits.
+    const recentUiMessages = uiMessages.slice(-20);
+
+    const modelMessages = convertToModelMessages(recentUiMessages as UIMessage[]).filter(isSupportedModelMessage);
 
     console.log("/api/chat env", {
       hasKey: Boolean(process.env.OPENAI_API_KEY?.trim()),
@@ -89,6 +95,13 @@ export async function POST(req: Request) {
             return document;
           },
         }),
+      },
+      onFinish: ({ usage }) => {
+        console.log("Token Usage Report:", {
+          conversationId: payload.conversationId,
+          model: payload.modelId,
+          ...usage,
+        });
       },
     });
 

@@ -24,13 +24,16 @@ type ChatComposerProps = {
   isSearchEnabled?: boolean;
 };
 
+/**
+ * Component for composing and sending chat messages.
+ * Supports text input, file attachments, and model selection.
+ */
 export function ChatComposer({
   input,
   onInputChange,
   onSubmit,
   disabled,
   isStreaming,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   usage,
   attachments,
   onRemoveAttachment,
@@ -43,6 +46,7 @@ export function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
 
+  // Handle Enter key to submit, Shift+Enter for new line
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -222,8 +226,17 @@ export function ChatComposer({
       
       {error && <p className="mt-2 text-center text-xs text-red-500">{error}</p>}
       
-      <div className="mt-2 text-center text-xs text-slate-400">
-        AI can make mistakes. Please double check responses.
+      <div className="mt-2 flex items-center justify-between px-1 text-xs text-slate-400">
+        <span>AI can make mistakes. Please double check responses.</span>
+        {usage && (
+          <span className={clsx(
+            "font-medium",
+            usage.chat.remaining === 0 ? "text-red-500" :
+            usage.chat.remaining < 3 ? "text-amber-500" : "text-slate-400"
+          )}>
+            {usage.chat.remaining} messages left
+          </span>
+        )}
       </div>
     </div>
   );

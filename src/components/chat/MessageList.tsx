@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, FileText, Loader2, User } from "lucide-react";
+import { Bot, FileText, Loader2, User, RefreshCw } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
@@ -13,9 +13,16 @@ export type MessageListProps = {
   isStreaming: boolean;
   onSelectDocument?: (documentId: string) => void;
   documentLookup?: Partial<Record<string, CanvasDocument>>;
+  // When true the latest message failed and we render an inline retry prompt.
+  showRetry?: boolean;
+  onRetry?: () => void;
 };
 
-export function MessageList({ messages, isStreaming, onSelectDocument, documentLookup = {} }: MessageListProps) {
+/**
+ * Renders the list of chat messages.
+ * Handles empty states, message bubbles, and loading indicators.
+ */
+export function MessageList({ messages, isStreaming, onSelectDocument, documentLookup = {}, showRetry, onRetry }: MessageListProps) {
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
       {messages.length === 0 && (
@@ -29,13 +36,26 @@ export function MessageList({ messages, isStreaming, onSelectDocument, documentL
           </p>
         </div>
       )}
-      {messages.map((message) => (
-        <MessageBubble
-          key={message.id}
-          message={message}
-          onSelectDocument={onSelectDocument}
-          documentLookup={documentLookup}
-        />
+      {messages.map((message, index) => (
+        <div key={message.id} className="flex flex-col gap-2">
+          <MessageBubble
+            message={message}
+            onSelectDocument={onSelectDocument}
+            documentLookup={documentLookup}
+          />
+          {showRetry && index === messages.length - 1 && (
+            <div className="flex justify-end px-4 items-center gap-2">
+              <span className="text-xs text-red-500">Failed to send</span>
+              <button
+                type="button"
+                onClick={() => onRetry?.()}
+                className="text-red-500 text-sm flex items-center gap-1 hover:underline"
+              >
+                <RefreshCw className="h-3 w-3" /> Retry
+              </button>
+            </div>
+          )}
+        </div>
       ))}
       {isStreaming && (
         <div className="flex items-center gap-2 text-sm text-slate-500 pl-12">
@@ -52,6 +72,10 @@ type MessageBubbleProps = {
   documentLookup: Partial<Record<string, CanvasDocument>>;
 };
 
+/**
+ * Individual message bubble component.
+ * Renders text content and document chips based on message parts.
+ */
 function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBubbleProps) {
   const isUser = message.role === "user";
   return (

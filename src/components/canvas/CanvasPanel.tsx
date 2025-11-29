@@ -15,6 +15,11 @@ export type CanvasPanelProps = {
   onExpand: () => void;
 };
 
+/**
+ * A slide-out panel that displays generated documents.
+ * Supports minimizing to a floating button and expanding to a full-height sidebar.
+ * Includes controls for downloading the document as DOCX.
+ */
 export function CanvasPanel({ document, isOpen, isMinimized, onClose, onMinimize, onExpand }: CanvasPanelProps) {
   const isVisible = isOpen && Boolean(document);
 
@@ -85,6 +90,10 @@ export function CanvasPanel({ document, isOpen, isMinimized, onClose, onMinimize
   );
 }
 
+/**
+ * Renders the content of a generated document.
+ * Maps document sections to HTML elements.
+ */
 function DocumentPreview({ document }: { document: CanvasDocument }) {
   return (
     <div className="space-y-8 text-slate-700">
@@ -103,6 +112,10 @@ function DocumentPreview({ document }: { document: CanvasDocument }) {
   );
 }
 
+/**
+ * Loading state for the document preview.
+ * Shows a pulsing skeleton UI.
+ */
 function DocumentSkeleton() {
   return (
     <div className="space-y-4">

@@ -36,6 +36,10 @@ export class AttachmentValidationError extends Error {
   }
 }
 
+/**
+ * Validates a list of attachments against size, type, and count limits.
+ * Throws AttachmentValidationError if any check fails.
+ */
 export function ensureValidAttachments(
   attachments: AttachmentPayload[] | undefined
 ): AttachmentPayload[] {

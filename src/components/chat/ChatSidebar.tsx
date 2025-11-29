@@ -16,7 +16,12 @@ type ChatSidebarProps = {
   onDeleteConversation: (conversationId: string) => void;
 };
 
+/**
+ * Sidebar component for the chat interface.
+ * Displays the list of conversations, search functionality, and usage quota.
+ */
 export function ChatSidebar({
+  usage,
   conversations,
   activeConversationId,
   onNewChat,
@@ -26,6 +31,7 @@ export function ChatSidebar({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Filter conversations based on search query
   const filteredConversations = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) {
@@ -144,6 +150,61 @@ export function ChatSidebar({
           )}
         </div>
       </div>
+
+      {usage && (
+        <div className={clsx("border-t border-slate-200 bg-white", isCollapsed ? "p-2" : "p-4")}>
+          {!isCollapsed ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-600">
+                <span>Daily Conversations</span>
+                <span>{usage.daily.remaining} / {usage.daily.limit}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div 
+                  className={clsx(
+                    "h-full transition-all duration-500 ease-out",
+                    usage.daily.remaining === 0 ? "bg-red-500" : 
+                    usage.daily.remaining < 2 ? "bg-amber-500" : "bg-[#006dff]"
+                  )}
+                  style={{ width: `${(usage.daily.remaining / usage.daily.limit) * 100}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Resets at midnight
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1">
+              <div className="relative h-8 w-8">
+                <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    className="text-slate-100"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className={clsx(
+                      "transition-all duration-500 ease-out",
+                      usage.daily.remaining === 0 ? "text-red-500" : 
+                      usage.daily.remaining < 5 ? "text-amber-500" : "text-[#006dff]"
+                    )}
+                    strokeDasharray={`${(usage.daily.remaining / usage.daily.limit) * 100}, 100`}
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-slate-600">
+                  {usage.daily.remaining}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </aside>
   );
 }

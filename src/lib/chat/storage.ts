@@ -37,6 +37,7 @@ class ChatDatabase extends Dexie {
 
   constructor() {
     super("sportsnaukri-chat");
+    // Define the database schema
     this.version(1).stores({
       conversations: "&id, createdAt, updatedAt",
       messages: "&id, conversationId, createdAt",
@@ -46,16 +47,26 @@ class ChatDatabase extends Dexie {
 
 export const chatDb = new ChatDatabase();
 
+/**
+ * Creates a new conversation in the database.
+ */
 export async function createConversation(conversation: StoredConversation) {
   await chatDb.conversations.add(conversation);
   return conversation;
 }
 
+/**
+ * Updates or inserts a conversation in the database.
+ */
 export async function upsertConversation(conversation: StoredConversation) {
   await chatDb.conversations.put(conversation);
   return conversation;
 }
 
+/**
+ * Saves a message to the database and updates the conversation's message count.
+ * Handles both new messages and updates to existing messages (e.g., streaming).
+ */
 export async function saveMessage(message: StoredMessage) {
   await chatDb.transaction("rw", chatDb.messages, chatDb.conversations, async () => {
     const previouslySaved = await chatDb.messages.get(message.id);
@@ -74,6 +85,9 @@ export async function saveMessage(message: StoredMessage) {
   return message;
 }
 
+/**
+ * Lists conversations, ordered by most recently updated.
+ */
 export async function listConversations(limit = 20) {
   return chatDb.conversations
     .orderBy("updatedAt")
@@ -82,14 +96,23 @@ export async function listConversations(limit = 20) {
     .toArray();
 }
 
+/**
+ * Gets the most recently updated conversation.
+ */
 export async function getLatestConversation() {
   return chatDb.conversations.orderBy("updatedAt").last();
 }
 
+/**
+ * Retrieves a conversation by its ID.
+ */
 export async function getConversation(conversationId: string) {
   return chatDb.conversations.get(conversationId);
 }
 
+/**
+ * Updates metadata for a conversation (title, model, archived status).
+ */
 export async function updateConversationMeta(
   conversationId: string,
   updates: Partial<Pick<StoredConversation, "title" | "modelId" | "isArchived">>

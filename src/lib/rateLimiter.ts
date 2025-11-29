@@ -10,12 +10,20 @@ const hasKvConfig =
   Boolean(process.env.KV_REST_API_URL) &&
   Boolean(process.env.KV_REST_API_TOKEN);
 
+console.log("[RateLimiter] Initialized. KV Configured:", hasKvConfig);
+
 type MemoryEntry = {
   value: number;
   expiresAt: number;
 };
 
-const memoryStore = new Map<string, MemoryEntry>();
+// Use a global singleton to share state across different route handlers in local development (Node.js runtime).
+// In Edge runtime, this global is not shared across isolates, so this fallback only works per-isolate.
+const globalStore = global as unknown as { _rateLimitStore: Map<string, MemoryEntry> };
+if (!globalStore._rateLimitStore) {
+  globalStore._rateLimitStore = new Map<string, MemoryEntry>();
+}
+const memoryStore = globalStore._rateLimitStore;
 
 const nowUtc = () => new Date();
 
@@ -27,11 +35,13 @@ const secondsUntilUtcMidnight = () => {
 };
 
 async function incrementCounter(key: string, ttlSeconds: number) {
+  console.log(`[RateLimiter] Incrementing counter for key: ${key}`);
   if (hasKvConfig) {
     const newValue = await kv.incr(key);
     if (newValue === 1) {
       await kv.expire(key, ttlSeconds);
     }
+    console.log(`[RateLimiter] KV increment result: ${newValue}`);
     return newValue;
   }
 
@@ -40,23 +50,30 @@ async function incrementCounter(key: string, ttlSeconds: number) {
 
   if (!existing || existing.expiresAt < Date.now()) {
     memoryStore.set(key, { value: 1, expiresAt: expiration });
+    console.log(`[RateLimiter] Memory init result: 1`);
     return 1;
   }
 
   const value = existing.value + 1;
   memoryStore.set(key, { value, expiresAt: existing.expiresAt });
+  console.log(`[RateLimiter] Memory increment result: ${value}`);
   return value;
 }
 
 async function getCounter(key: string) {
+  console.log(`[RateLimiter] Getting counter for key: ${key}`);
   if (hasKvConfig) {
-    return (await kv.get<number>(key)) ?? 0;
+    const val = (await kv.get<number>(key)) ?? 0;
+    console.log(`[RateLimiter] KV get result: ${val}`);
+    return val;
   }
 
   const entry = memoryStore.get(key);
   if (!entry || entry.expiresAt < Date.now()) {
+    console.log(`[RateLimiter] Memory get result: 0 (missing or expired)`);
     return 0;
   }
+  console.log(`[RateLimiter] Memory get result: ${entry.value}`);
   return entry.value;
 }
 

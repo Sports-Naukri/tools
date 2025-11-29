@@ -10,6 +10,10 @@ type ModelPickerProps = {
   onChange: (id: string) => void;
 };
 
+/**
+ * Component for selecting the AI model.
+ * Displays available models and their status (enabled/locked).
+ */
 export function ModelPicker({ modelId, onChange }: ModelPickerProps) {
   return (
     <div className="rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm">

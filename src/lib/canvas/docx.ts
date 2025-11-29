@@ -1,5 +1,11 @@
 import type { CanvasDocument } from "./documents";
 
+/**
+ * Exports a canvas document to a Microsoft Word (.docx) file.
+ * Dynamically imports 'docx' and 'file-saver' to reduce initial bundle size.
+ * 
+ * @param document The document object to export
+ */
 export async function exportDocumentToDocx(document: CanvasDocument | null) {
   if (!document || typeof window === "undefined") {
     return;

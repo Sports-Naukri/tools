@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/ip";
 import { getUsageSnapshot } from "@/lib/rateLimiter";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const preferredRegion = ["bom1", "sin1", "fra1"];
 
 export async function GET(req: Request) {

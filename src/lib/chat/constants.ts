@@ -16,13 +16,17 @@ export type ChatModel = {
   isEnabled: boolean;
 };
 
+/**
+ * Available chat models configuration.
+ * Controls which models are visible and selectable in the UI.
+ */
 export const CHAT_MODELS: ChatModel[] = [
   {
     id: "standard",
     vendor: "openai",
     name: "Standard",
-    description: "Balanced SportsNaukri coach (GPT-5 Nano)",
-    providerModelId: "gpt-5-nano",
+    description: "Balanced SportsNaukri coach (GPT-4o Mini)",
+    providerModelId: "gpt-4o-mini",
     isEnabled: true,
   },
   {
@@ -30,7 +34,7 @@ export const CHAT_MODELS: ChatModel[] = [
     vendor: "openai",
     name: "Advanced",
     description: "Coming soon: deeper reasoning mode",
-    providerModelId: "gpt-5.1",
+    providerModelId: "gpt-4o",
     isEnabled: false,
   },
 ];

@@ -37,12 +37,19 @@ type SessionState = {
   usage: UsageSnapshot;
 };
 
+/**
+ * Main client component for the chat page.
+ * Handles the initialization of the chat session, loading history, and managing the active conversation.
+ */
 export function ChatPageClient() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [history, setHistory] = useState<StoredConversation[]>([]);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Refreshes the list of conversations from local storage.
+   */
   const refreshHistory = useCallback(async (): Promise<StoredConversation[]> => {
     const conversations = await listConversations(20);
     syncChatTitleCounter(conversations);
@@ -51,6 +58,9 @@ export function ChatPageClient() {
   }, []);
 
 
+  /**
+   * Loads usage statistics for the current user/conversation.
+   */
   const loadUsage = useCallback(async (conversationId?: string) => {
     const params = new URLSearchParams();
     if (conversationId) params.set("conversationId", conversationId);
@@ -58,9 +68,14 @@ export function ChatPageClient() {
     if (!res.ok) {
       throw new Error("Failed to load usage");
     }
-    return (await res.json()) as UsageSnapshot;
+    const data = (await res.json()) as UsageSnapshot;
+    console.log("[ChatPageClient] Loaded usage:", data);
+    return data;
   }, []);
 
+  /**
+   * Bootstraps the chat session by loading the latest conversation or creating a new one.
+   */
   const bootstrap = useCallback(async () => {
     setIsBootstrapping(true);
     const latest = await getLatestConversation();
@@ -192,15 +207,40 @@ type ChatWorkspaceProps = {
 };
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];
+// Captures the outbound payload so we can replay it if the request fails.
+type PendingRequest = {
+  message: ToolAwareMessage;
+  body: {
+    conversationId: string;
+    modelId: string;
+    isSearchEnabled: boolean;
+    attachments: Array<{
+      id: string;
+      name: string;
+      size: number;
+      type: string;
+      url?: string;
+    }>;
+    isNewConversation: boolean;
+  };
+};
 
+/**
+ * Component responsible for the active chat interface.
+ * Manages the message list, composer, and canvas panel.
+ */
 function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage, refreshHistory }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
   const isSearchEnabled = false;
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  // True when the last request failed and the user can retry it inline.
+  const [retryAvailable, setRetryAvailable] = useState(false);
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Track persisted snapshots to avoid unnecessary writes to storage
   const persistedMessageSnapshots = useRef(
     new Map(
       session.messages.map((message) => [
@@ -219,23 +259,113 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     (attachment) => attachment.status === "ready" && typeof attachment.url === "string"
   );
 
-  const { messages, sendMessage, status } = useChat<ToolAwareMessage>({
+  // Holds the most recent outbound request until it succeeds.
+  const lastRequestRef = useRef<PendingRequest | null>(null);
+  
+  const ensureConversationPersisted = useCallback(async () => {
+    if (!session) {
+      return;
+    }
+    const existing = await getConversation(session.conversation.id);
+    if (existing) {
+      return;
+    }
+    await createConversation(session.conversation);
+    await refreshHistory();
+  }, [session, refreshHistory]);
+
+  const messagesRef = useRef<ToolAwareMessage[]>([]);
+  
+  // Persist messages only after the assistant responds successfully.
+  const handleFinish = useCallback(async (completedMessage?: ToolAwareMessage) => {
+    let currentMessages = messagesRef.current;
+    
+    // Ensure we have the latest content for the completed message
+    if (completedMessage) {
+      const last = currentMessages[currentMessages.length - 1];
+      if (last && last.id === completedMessage.id) {
+        // Replace with the authoritative completed message
+        currentMessages = [...currentMessages.slice(0, -1), completedMessage];
+      } else if (last && last.role === "user") {
+        // If the ref hasn't updated yet to include the assistant message
+        currentMessages = [...currentMessages, completedMessage];
+      }
+    }
+
+    const candidates = currentMessages.filter((message) => isSupportedRole(message.role));
+
+    // Identify messages that need to be saved (changed content or new documents)
+    const pendingSaves = candidates
+      .map((message) => {
+        const normalizedContent = getTextContent(message);
+        const documents = extractDocumentsFromMessage(message);
+        const snapshot = buildPersistenceSnapshot(normalizedContent, documents);
+        return { message, content: normalizedContent, documents, snapshot };
+      })
+      .filter(({ content, documents }) => content.length > 0 || documents.length > 0)
+      .filter(({ message, snapshot }) => persistedMessageSnapshots.current.get(message.id) !== snapshot);
+
+    if (!pendingSaves.length) {
+      return;
+    }
+
+    await ensureConversationPersisted();
+    let titleUpdated = false;
+
+    for (const { message, content, documents, snapshot } of pendingSaves) {
+      await saveMessage({
+        id: message.id,
+        conversationId: session.conversation.id,
+        role: message.role,
+        content,
+        documents: documents.length ? documents.map(cloneDocument) : undefined,
+        createdAt: new Date().toISOString(),
+      });
+      persistedMessageSnapshots.current.set(message.id, snapshot);
+
+      // Update conversation title based on the first user message
+      if (!titleUpdated && message.role === "user" && isPlaceholderTitle(session.conversation.title)) {
+        const updatedConversation: StoredConversation = {
+          ...session.conversation,
+          title: deriveTitle(content),
+        };
+        await updateConversationMeta(session.conversation.id, { title: updatedConversation.title });
+        onConversationUpdate(updatedConversation);
+        titleUpdated = true;
+      }
+    }
+  }, [ensureConversationPersisted, onConversationUpdate, session.conversation]);
+
+  // Initialize the AI SDK chat hook
+  const { messages, sendMessage, status, setMessages } = useChat<ToolAwareMessage>({
     id: session.conversation.id,
     messages: initialMessages,
     onError: (error) => {
       setComposerError(error.message);
+      if (lastRequestRef.current) {
+        setRetryAvailable(true);
+      }
     },
-    onFinish: async () => {
+    onFinish: async ({ message }) => {
       hasStartedRef.current = true;
       setAttachments([]);
       const usage = await loadUsage(session.conversation.id);
       onUsageChange(usage);
+      await handleFinish(message);
     },
   });
 
+  useEffect(() => {
+    messagesRef.current = messages as ToolAwareMessage[];
+  }, [messages]);
+
   const isLoading = status === "streaming" || status === "submitted";
   const toolAwareMessages = messages as ToolAwareMessage[];
+  
+  // Ensure document summaries are present in the message list for display
   const displayMessages = useMemo(() => toolAwareMessages.map(ensureDocumentSummaryInMessage), [toolAwareMessages]);
+  
+  // Extract all documents from the message history for the canvas
   const canvasDocuments = useMemo<CanvasDocument[]>(() => {
     const docs = new Map<string, CanvasDocument>();
     for (const message of toolAwareMessages) {
@@ -325,6 +455,22 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+
+    if (retryAvailable) {
+      const newMessages = [...messages];
+      // Remove failed assistant message if present
+      if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+        newMessages.pop();
+      }
+      // Remove failed user message if present
+      if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'user') {
+        newMessages.pop();
+      }
+      setMessages(newMessages);
+      setRetryAvailable(false);
+      lastRequestRef.current = null;
+    }
+
     const trimmed = input.trim();
     const hasText = trimmed.length > 0;
     const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
@@ -350,83 +496,52 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       );
     }
 
-    await sendMessage(
-      {
+    const pendingRequest: PendingRequest = {
+      message: {
         role: "user",
         parts,
+      } as ToolAwareMessage,
+      body: {
+        conversationId: session.conversation.id,
+        modelId,
+        isSearchEnabled,
+        attachments: currentAttachments,
+        isNewConversation: !hasStartedRef.current,
       },
-      {
-        body: {
-          conversationId: session.conversation.id,
-          modelId,
-          isSearchEnabled,
-          attachments: currentAttachments,
-          isNewConversation: !hasStartedRef.current,
-        },
-      }
-    );
-    setInput("");
-  };
-
-  const ensureConversationPersisted = useCallback(async () => {
-    if (!session) {
-      return;
-    }
-    const existing = await getConversation(session.conversation.id);
-    if (existing) {
-      return;
-    }
-    await createConversation(session.conversation);
-    await refreshHistory();
-  }, [session, refreshHistory]);
-
-  useEffect(() => {
-    // Save only when the streamed message has meaningful text so assistant replies persist after reloads.
-    const persistLatestMessages = async () => {
-      const candidates = messages.filter((message) => isSupportedRole(message.role));
-
-      const pendingSaves = candidates
-        .map((message) => {
-          const normalizedContent = getTextContent(message);
-          const documents = extractDocumentsFromMessage(message);
-          const snapshot = buildPersistenceSnapshot(normalizedContent, documents);
-          return { message, content: normalizedContent, documents, snapshot };
-        })
-        .filter(({ content, documents }) => content.length > 0 || documents.length > 0)
-        .filter(({ message, snapshot }) => persistedMessageSnapshots.current.get(message.id) !== snapshot);
-
-      if (!pendingSaves.length) {
-        return;
-      }
-
-      await ensureConversationPersisted();
-      let titleUpdated = false;
-
-      for (const { message, content, documents, snapshot } of pendingSaves) {
-        await saveMessage({
-          id: message.id,
-          conversationId: session.conversation.id,
-          role: message.role,
-          content,
-          documents: documents.length ? documents.map(cloneDocument) : undefined,
-          createdAt: new Date().toISOString(),
-        });
-        persistedMessageSnapshots.current.set(message.id, snapshot);
-
-        if (!titleUpdated && message.role === "user" && isPlaceholderTitle(session.conversation.title)) {
-          const updatedConversation: StoredConversation = {
-            ...session.conversation,
-            title: deriveTitle(content),
-          };
-          await updateConversationMeta(session.conversation.id, { title: updatedConversation.title });
-          onConversationUpdate(updatedConversation);
-          titleUpdated = true;
-        }
-      }
     };
 
-    persistLatestMessages().catch((err) => console.error(err));
-  }, [messages, onConversationUpdate, session?.conversation, ensureConversationPersisted]);
+    lastRequestRef.current = pendingRequest;
+    setRetryAvailable(false);
+
+    try {
+      await sendMessage(pendingRequest.message, { body: pendingRequest.body });
+      lastRequestRef.current = null;
+      setInput("");
+    } catch (sendError) {
+      setRetryAvailable(true);
+      if (sendError instanceof Error) {
+        setComposerError(sendError.message);
+      }
+      return;
+    }
+  };
+
+  // Replays the last failed request without forcing the user to retype it.
+  const handleRetry = useCallback(async () => {
+    if (!lastRequestRef.current) {
+      return;
+    }
+    try {
+      setRetryAvailable(false);
+      await sendMessage(lastRequestRef.current.message, { body: lastRequestRef.current.body });
+      lastRequestRef.current = null;
+    } catch (retryError) {
+      setRetryAvailable(true);
+      if (retryError instanceof Error) {
+        setComposerError(retryError.message);
+      }
+    }
+  }, [sendMessage]);
 
   const handleFileSelect = useCallback(
     async (files: FileList | null) => {
@@ -514,6 +629,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
           isStreaming={isLoading}
           onSelectDocument={handleSelectDocument}
           documentLookup={documentLookup}
+          showRetry={retryAvailable}
+          onRetry={handleRetry}
         />
       </div>
 
@@ -547,6 +664,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
   );
 }
 
+/**
+ * Creates a new empty conversation with a generated ID and title.
+ * @param options Configuration options for the new conversation
+ * @param options.modelId The ID of the model to use
+ * @param options.persist Whether to save the conversation to storage immediately (default: true)
+ */
 async function createEmptyConversation({ modelId, persist = true }: { modelId: string; persist?: boolean }) {
   const now = new Date().toISOString();
   const conversation: StoredConversation = {
@@ -563,6 +686,10 @@ async function createEmptyConversation({ modelId, persist = true }: { modelId: s
   return conversation;
 }
 
+/**
+ * Derives a short title from the message content.
+ * Truncates text to 50 characters.
+ */
 function deriveTitle(content: string) {
   const trimmed = content.trim();
   if (trimmed.length <= 50) return trimmed;
@@ -571,6 +698,10 @@ function deriveTitle(content: string) {
 
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
 
+/**
+ * Converts a stored message format to the UI message format required by the AI SDK.
+ * Handles reconstruction of file attachments and document tool outputs.
+ */
 function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
   const parts: UIPart[] = [];
 
@@ -615,12 +746,19 @@ function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
 
 const SUPPORTED_ROLES = new Set<UIMessage["role"]>(["user", "assistant", "system"]);
 
+/**
+ * Checks if a message role is supported by the UI.
+ */
 function isSupportedRole(role: UIMessage["role"]): role is "user" | "assistant" | "system" {
   return SUPPORTED_ROLES.has(role);
 }
 
 const TEXT_PART_TYPES = new Set(["text", "output_text"]);
 
+/**
+ * Extracts the plain text content from a UI message.
+ * Combines multiple text parts if present.
+ */
 function getTextContent(message: UIMessage): string {
   const normalized = ensureDocumentSummaryInMessage(message);
   const textParts = (normalized.parts ?? [])
@@ -648,6 +786,10 @@ type DocumentToolPart = UIPart & {
   output?: unknown;
 };
 
+/**
+ * Extracts a canvas document from a message part if it exists.
+ * Validates that the part is a document tool output.
+ */
 function extractDocumentFromPart(part: UIPart | undefined): CanvasDocument | null {
   if (!part || part.type !== DOCUMENT_PART_TYPE) {
     return null;
@@ -666,6 +808,9 @@ function extractDocumentFromPart(part: UIPart | undefined): CanvasDocument | nul
   };
 }
 
+/**
+ * Extracts all canvas documents from a message.
+ */
 function extractDocumentsFromMessage(message: UIMessage): CanvasDocument[] {
   if (!message.parts?.length) {
     return [];
@@ -676,6 +821,9 @@ function extractDocumentsFromMessage(message: UIMessage): CanvasDocument[] {
     .map((document) => cloneDocument(document));
 }
 
+/**
+ * Creates a deep copy of a document object.
+ */
 function cloneDocument(document: CanvasDocument): CanvasDocument {
   return {
     ...document,
@@ -683,6 +831,10 @@ function cloneDocument(document: CanvasDocument): CanvasDocument {
   };
 }
 
+/**
+ * Creates a snapshot string for change detection.
+ * Used to determine if a message needs to be persisted.
+ */
 function buildPersistenceSnapshot(content: string, documents: CanvasDocument[]): string {
   return JSON.stringify({
     content,
@@ -693,11 +845,17 @@ function buildPersistenceSnapshot(content: string, documents: CanvasDocument[]):
 const CHAT_TITLE_COUNTER_KEY = "sn-chat-title-counter";
 const CHAT_PLACEHOLDER_REGEX = /^chat\s+(\d+)$/i;
 
+/**
+ * Generates the next default chat title (e.g., "Chat 1", "Chat 2").
+ */
 function getNextChatTitle() {
   const nextValue = incrementChatCounter();
   return `Chat ${nextValue}`;
 }
 
+/**
+ * Increments the persistent chat counter in local storage.
+ */
 function incrementChatCounter() {
   const current = getStoredChatCounter();
   const next = current + 1;
@@ -707,25 +865,25 @@ function incrementChatCounter() {
   return next;
 }
 
+/**
+ * Ensures a message has a text summary if it contains a document.
+ * Adds a generated summary if one is missing.
+ */
 function ensureDocumentSummaryInMessage<T extends UIMessage>(message: T): T {
   const parts = message.parts ?? [];
-  const hasDocumentPart = parts.some((part) => Boolean(extractDocumentFromPart(part)));
-  if (!hasDocumentPart) {
-    return message;
-  }
-  const hasTextSummary = parts.some((part) => TEXT_PART_TYPES.has(part.type));
-  if (hasTextSummary) {
-    return message;
-  }
   const document = parts.reduce<CanvasDocument | null>((acc, part) => acc ?? extractDocumentFromPart(part), null);
   if (!document) {
     return message;
   }
   const summary = buildDocumentSummary(document);
-  const nextParts = [...parts, { type: "text", text: summary } as UIPart];
+  const filteredParts = parts.filter((part) => !TEXT_PART_TYPES.has(part.type));
+  const nextParts = [...filteredParts, { type: "text", text: summary } as UIPart];
   return { ...message, parts: nextParts } as T;
 }
 
+/**
+ * Builds a human-readable summary string for a document.
+ */
 function buildDocumentSummary(document: CanvasDocument): string {
   const readableType = document.type.replace(/_/g, " ");
   if (document.title?.trim()) {
@@ -734,6 +892,9 @@ function buildDocumentSummary(document: CanvasDocument): string {
   return `Generated ${readableType}.`;
 }
 
+/**
+ * Retrieves the current chat counter value from local storage.
+ */
 function getStoredChatCounter() {
   if (typeof window === "undefined") {
     return 0;
@@ -743,6 +904,10 @@ function getStoredChatCounter() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+/**
+ * Syncs the local storage counter with the highest number found in existing conversations.
+ * Prevents duplicate default titles when clearing storage or switching devices.
+ */
 function syncChatTitleCounter(conversations: StoredConversation[]) {
   if (typeof window === "undefined") {
     return;
@@ -761,6 +926,9 @@ function syncChatTitleCounter(conversations: StoredConversation[]) {
   }
 }
 
+/**
+ * Checks if a title is a default placeholder (e.g., "New Chat", "Chat 1").
+ */
 function isPlaceholderTitle(title?: string | null) {
   if (!title) {
     return true;

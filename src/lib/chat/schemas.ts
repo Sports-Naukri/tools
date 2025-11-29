@@ -30,6 +30,10 @@ const messageSchema = z.object({
   parts: z.array(genericPartSchema).optional(),
 });
 
+/**
+ * Schema for validating chat requests sent to the API.
+ * Ensures all required fields are present and valid.
+ */
 export const chatRequestSchema = z.object({
   conversationId: z.string().min(4),
   isNewConversation: z.boolean().optional().default(false),

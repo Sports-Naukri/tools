@@ -27,6 +27,10 @@ export type ConversationState = {
   requestCount: number;
 };
 
+/**
+ * Snapshot of the user's usage quotas.
+ * Returned by the API to enforce limits on the client.
+ */
 export type UsageSnapshot = {
   daily: {
     limit: number;

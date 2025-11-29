@@ -22,7 +22,11 @@ type ChatComposerProps = {
   modelId?: string;
   onModelChange?: (modelId: string) => void;
   isSearchEnabled?: boolean;
+  limitReachedReason?: 'daily' | 'chat' | null;
+  onNewChat?: () => void;
 };
+
+const MAX_INPUT_LENGTH = 4000;
 
 /**
  * Component for composing and sending chat messages.
@@ -42,6 +46,8 @@ export function ChatComposer({
   modelId,
   onModelChange,
   isSearchEnabled,
+  limitReachedReason,
+  onNewChat,
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
@@ -58,6 +64,7 @@ export function ChatComposer({
   };
 
   const currentModel = CHAT_MODELS.find((m) => m.id === modelId) || CHAT_MODELS[0];
+  const showCharCount = input.length > MAX_INPUT_LENGTH * 0.8;
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 pb-6">
@@ -65,9 +72,40 @@ export function ChatComposer({
         onSubmit={onSubmit}
         className={clsx(
           "relative flex flex-col rounded-2xl border bg-white shadow-sm transition-colors",
-          "border-slate-200 focus-within:border-slate-300 focus-within:ring-1 focus-within:ring-slate-200"
+          "border-slate-200 focus-within:border-slate-300 focus-within:ring-1 focus-within:ring-slate-200",
+          disabled && "bg-slate-50"
         )}
       >
+        {/* Limit Reached Overlay */}
+        {limitReachedReason && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-white/80 backdrop-blur-[1px] p-4 text-center">
+            <div className="flex flex-col items-center gap-3 max-w-sm">
+              <div className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600 shadow-sm border border-slate-200">
+                <Lock className="h-4 w-4 text-amber-500" />
+                {limitReachedReason === 'daily' 
+                  ? "Daily conversation limit reached. Come back tomorrow!" 
+                  : "Message limit reached for this conversation."}
+              </div>
+              
+              {limitReachedReason === 'chat' && onNewChat && usage && (
+                usage.daily.remaining > 0 ? (
+                  <button
+                    type="button"
+                    onClick={onNewChat}
+                    className="text-xs text-[#006dff] hover:underline font-medium"
+                  >
+                    Start a new chat to continue
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-500">
+                    You have also reached your daily chat limit.
+                  </span>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Attachments Preview */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 p-3 pb-0">
@@ -94,15 +132,26 @@ export function ChatComposer({
           </div>
         )}
 
-        <textarea
-          value={input}
-          onChange={onInputChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Type your message here..."
-          className="min-h-[60px] w-full resize-none bg-transparent px-4 py-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
-          rows={1}
-          disabled={disabled}
-        />
+        <div className="relative">
+          <textarea
+            value={input}
+            onChange={onInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Type your message here..."
+            className="min-h-[60px] w-full resize-none bg-transparent px-4 py-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
+            rows={1}
+            disabled={disabled}
+            maxLength={MAX_INPUT_LENGTH}
+          />
+          {showCharCount && (
+            <div className={clsx(
+              "absolute bottom-2 right-4 text-xs pointer-events-none",
+              input.length >= MAX_INPUT_LENGTH ? "text-red-500 font-medium" : "text-slate-400"
+            )}>
+              {input.length} / {MAX_INPUT_LENGTH}
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center justify-between p-2">
           <div className="flex items-center gap-2">

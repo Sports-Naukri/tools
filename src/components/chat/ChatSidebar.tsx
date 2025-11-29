@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ChangeEvent } from "react";
-import { MessageSquare, Plus, Search, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
+import { MessageSquare, Plus, Search, PanelLeftClose, PanelLeftOpen, Trash2, Lock } from "lucide-react";
 import clsx from "clsx";
 
 import type { UsageSnapshot } from "@/lib/chat/types";
@@ -48,6 +48,8 @@ export function ChatSidebar({
   };
   const visibleConversations = filteredConversations;
 
+  const isDailyLimitReached = usage ? usage.daily.remaining <= 0 : false;
+
   return (
     <aside 
       className={clsx(
@@ -73,14 +75,18 @@ export function ChatSidebar({
 
         <button
           onClick={onNewChat}
+          disabled={isDailyLimitReached}
           className={clsx(
-            "flex items-center justify-center gap-2 rounded-lg bg-[#006dff] text-sm font-medium text-white hover:bg-[#0056cc] transition-colors",
-            isCollapsed ? "h-8 w-8 p-0" : "w-full px-4 py-2.5"
+            "flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors",
+            isCollapsed ? "h-8 w-8 p-0" : "w-full px-4 py-2.5",
+            isDailyLimitReached 
+              ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
+              : "bg-[#006dff] text-white hover:bg-[#0056cc]"
           )}
-          title="New Chat"
+          title={isDailyLimitReached ? "Daily limit reached" : "New Chat"}
         >
-          <Plus className="h-4 w-4" />
-          {!isCollapsed && <span>New Chat</span>}
+          {isDailyLimitReached ? <Lock className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {!isCollapsed && <span>{isDailyLimitReached ? "Limit Reached" : "New Chat"}</span>}
         </button>
 
         {!isCollapsed && (

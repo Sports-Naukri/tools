@@ -193,6 +193,7 @@ export function ChatPageClient() {
         onConversationUpdate={handleConversationUpdate}
         loadUsage={loadUsage}
         refreshHistory={refreshHistory}
+        onNewChat={handleNewChat}
       />
     </div>
   );
@@ -204,6 +205,7 @@ type ChatWorkspaceProps = {
   onConversationUpdate: (conversation: StoredConversation) => void;
   loadUsage: (conversationId: string) => Promise<UsageSnapshot>;
   refreshHistory: () => Promise<StoredConversation[]>;
+  onNewChat: () => void;
 };
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];
@@ -229,7 +231,7 @@ type PendingRequest = {
  * Component responsible for the active chat interface.
  * Manages the message list, composer, and canvas panel.
  */
-function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage, refreshHistory }: ChatWorkspaceProps) {
+function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage, refreshHistory, onNewChat }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
   const isSearchEnabled = false;
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
@@ -609,8 +611,13 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== attachmentId));
   }, []);
 
-  const chatDisabled =
-    session.usage.daily.remaining <= 0 || session.usage.chat.remaining <= 0 || isLoading;
+  const isNewConversation = session.conversation.messageCount === 0;
+  const dailyLimitReached = session.usage.daily.remaining <= 0;
+  const chatLimitReached = session.usage.chat.remaining <= 0;
+  
+  // Only block if it's a new conversation AND daily limit is reached, OR if chat limit is reached for this specific chat
+  const isLimitReached = (isNewConversation && dailyLimitReached) || chatLimitReached;
+  const chatDisabled = isLimitReached || isLoading;
 
   useEffect(() => {
     const node = scrollContainerRef.current;
@@ -649,6 +656,11 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
           modelId={modelId}
           onModelChange={setModelId}
           isSearchEnabled={isSearchEnabled}
+          onNewChat={onNewChat}
+          limitReachedReason={
+            isNewConversation && dailyLimitReached ? 'daily' : 
+            chatLimitReached ? 'chat' : null
+          }
         />
       </div>
 

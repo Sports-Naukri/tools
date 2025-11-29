@@ -922,9 +922,9 @@ function ensureDocumentSummaryInMessage<T extends UIMessage>(message: T): T {
 function buildDocumentSummary(document: CanvasDocument): string {
   const readableType = document.type.replace(/_/g, " ");
   if (document.title?.trim()) {
-    return `Generated ${readableType} titled "${document.title.trim()}".`;
+    return `I've created a ${readableType} for you: "${document.title.trim()}".`;
   }
-  return `Generated ${readableType}.`;
+  return `Here is your generated ${readableType}.`;
 }
 
 /**

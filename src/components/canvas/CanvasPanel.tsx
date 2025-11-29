@@ -40,19 +40,20 @@ export function CanvasPanel({ document, isOpen, onClose }: CanvasPanelProps) {
             <button
               type="button"
               onClick={() => exportDocumentToDocx(document ?? null)}
-              className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors"
               title="Download as DOCX"
               disabled={!document}
             >
               <Download className="h-4 w-4" />
+              <span>Download DOCX</span>
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-red-500"
+              className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
               title="Close canvas"
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5" />
             </button>
           </div>
         </header>

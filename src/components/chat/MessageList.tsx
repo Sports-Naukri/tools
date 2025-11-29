@@ -87,7 +87,7 @@ function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBub
       )}
       <div
         className={clsx(
-          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed flex flex-col gap-2",
           isUser 
             ? "bg-[#006dff] text-white rounded-br-sm" 
             : "bg-transparent text-slate-900 px-0 py-0"
@@ -137,13 +137,14 @@ type DocumentChipProps = {
 function DocumentChip({ document, onSelectDocument }: DocumentChipProps) {
   if (!document) return null;
   const readableType = document.type.replace(/_/g, " ");
-  const label = `View generated ${readableType}`;
+  const isResume = readableType.toLowerCase().includes('resume');
+  const label = isResume ? `View generated ${readableType}` : "View document";
 
   return (
     <button
       type="button"
       onClick={() => onSelectDocument?.(document.id)}
-      className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-100"
+      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-100 w-fit"
     >
       <FileText className="h-4 w-4" />
       {label}

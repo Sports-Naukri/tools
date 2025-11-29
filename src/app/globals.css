@@ -411,3 +411,34 @@
     display: none;
   }
 }
+
+.chat-markdown {
+  word-break: break-word;
+}
+
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0.35rem 0;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 1.25rem;
+}
+
+.chat-markdown li {
+  margin: 0.15rem 0;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  margin: 0.75rem 0 0.35rem;
+  font-weight: 600;
+}
+
+.chat-markdown code {
+  border-radius: 0.25rem;
+}

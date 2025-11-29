@@ -648,11 +648,13 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
 
   const handleSuggestionClick = useCallback(async (text: string) => {
     if (chatDisabled) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
 
     const pendingRequest: PendingRequest = {
       message: {
         role: "user",
-        parts: [{ type: "text", text } as UIPart],
+        parts: [{ type: "text", text: trimmed } as UIPart],
       } as ToolAwareMessage,
       body: {
         conversationId: session.conversation.id,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, FileText, Loader2, User, RefreshCw } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -79,27 +80,33 @@ export function MessageList({
           </div>
         </div>
       )}
-      {messages.map((message, index) => (
-        <div key={message.id} className="flex flex-col gap-2">
-          <MessageBubble
-            message={message}
-            onSelectDocument={onSelectDocument}
-            documentLookup={documentLookup}
-          />
-          {showRetry && index === messages.length - 1 && (
-            <div className="flex justify-end px-4 items-center gap-2">
-              <span className="text-xs text-red-500">Failed to send</span>
-              <button
-                type="button"
-                onClick={() => onRetry?.()}
-                className="text-red-500 text-sm flex items-center gap-1 hover:underline"
-              >
-                <RefreshCw className="h-3 w-3" /> Retry
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
+      {messages.map((message, index) => {
+        const isAssistantStreaming =
+          isStreaming && index === messages.length - 1 && message.role === "assistant";
+
+        return (
+          <div key={message.id} className="flex flex-col gap-2">
+            <MessageBubble
+              message={message}
+              onSelectDocument={onSelectDocument}
+              documentLookup={documentLookup}
+              isStreamingAssistant={isAssistantStreaming}
+            />
+            {showRetry && index === messages.length - 1 && (
+              <div className="flex justify-end px-4 items-center gap-2">
+                <span className="text-xs text-red-500">Failed to send</span>
+                <button
+                  type="button"
+                  onClick={() => onRetry?.()}
+                  className="text-red-500 text-sm flex items-center gap-1 hover:underline"
+                >
+                  <RefreshCw className="h-3 w-3" /> Retry
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
       {isStreaming && (
         <div className="flex items-center gap-2 text-sm text-slate-500 pl-12">
           <Loader2 className="h-4 w-4 animate-spin" /> Generating answer…
@@ -113,13 +120,14 @@ type MessageBubbleProps = {
   message: ToolAwareMessage;
   onSelectDocument?: (documentId: string) => void;
   documentLookup: Partial<Record<string, CanvasDocument>>;
+  isStreamingAssistant?: boolean;
 };
 
 /**
  * Individual message bubble component.
  * Renders text content and document chips based on message parts.
  */
-function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBubbleProps) {
+function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingAssistant = false }: MessageBubbleProps) {
   const isUser = message.role === "user";
   return (
     <div className={clsx("flex gap-4", isUser ? "justify-end" : "justify-start")}>
@@ -130,7 +138,7 @@ function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBub
       )}
       <div
         className={clsx(
-          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed flex flex-col gap-2",
+          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed flex flex-col gap-2",
           isUser 
             ? "bg-[#006dff] text-white rounded-br-sm" 
             : "bg-transparent text-slate-900 px-0 py-0"
@@ -139,7 +147,7 @@ function MessageBubble({ message, onSelectDocument, documentLookup }: MessageBub
         {message.parts.map((part, index) => {
           if (part.type === 'text') {
             return (
-              <MarkdownContent key={index} text={part.text} isUser={isUser} />
+              <MarkdownContent key={index} text={part.text} isUser={isUser} isStreaming={isStreamingAssistant} />
             );
           }
 
@@ -211,19 +219,64 @@ function isDocumentToolPart(part: unknown): part is UnknownToolPart {
 type MarkdownContentProps = {
   text: string;
   isUser: boolean;
+  isStreaming?: boolean;
 };
 
-function MarkdownContent({ text, isUser }: MarkdownContentProps) {
-  const components = getMarkdownComponents(isUser);
+function MarkdownContent({ text, isUser, isStreaming = false }: MarkdownContentProps) {
+  const components = useMemo(() => getMarkdownComponents(isUser), [isUser]);
+  const normalizedText = useMemo(() => normalizeMarkdown(text), [text]);
+  const [displayText, setDisplayText] = useState(normalizedText);
+  const targetRef = useRef(normalizedText);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    targetRef.current = normalizedText;
+
+    if (!isStreaming) {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      const raf = requestAnimationFrame(() => {
+        setDisplayText(normalizedText);
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+
+    const tick = () => {
+      setDisplayText((prev) => {
+        const target = targetRef.current ?? "";
+        if (prev === target) {
+          if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+          }
+          return prev;
+        }
+        const remaining = target.length - prev.length;
+        const chunk = remaining > 20 ? Math.ceil(remaining / 14) : 1;
+        return target.slice(0, prev.length + chunk);
+      });
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [normalizedText, isStreaming]);
+
   return (
-    <div
-      className={clsx(
-        "prose prose-sm max-w-none whitespace-pre-wrap wrap-break-word",
-        isUser ? "prose-invert text-white" : "text-slate-900"
-      )}
-    >
+    <div className={clsx("chat-markdown text-sm leading-relaxed", isUser ? "text-white" : "text-slate-900")}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {text}
+        {displayText}
       </ReactMarkdown>
     </div>
   );
@@ -252,4 +305,20 @@ function getMarkdownComponents(isUser: boolean): Components {
       />
     ),
   } satisfies Components;
+}
+
+function normalizeMarkdown(input: string): string {
+  if (!input) {
+    return "";
+  }
+
+  const normalizedNewlines = input.replace(/\r\n/g, "\n").replace(/\u00A0/g, " ");
+  const collapsed = normalizedNewlines
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n");
+
+  const needsLeadingWhitespace = collapsed.trimStart().startsWith("```");
+  const trimmed = needsLeadingWhitespace ? collapsed.trimEnd() : collapsed.trim();
+
+  return trimmed;
 }

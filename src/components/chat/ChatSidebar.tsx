@@ -1,11 +1,18 @@
 "use client";
 
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { MessageSquare, Plus, Search, PanelLeftClose, PanelLeftOpen, Trash2, Lock } from "lucide-react";
 import clsx from "clsx";
 
 import type { UsageSnapshot } from "@/lib/chat/types";
 import type { StoredConversation } from "@/lib/chat/storage";
+
+const SIDEBAR_WIDTH_STORAGE_KEY = "sn-chat-sidebar-width";
+const DEFAULT_EXPANDED_WIDTH = 320;
+const MIN_EXPANDED_WIDTH = 260;
+const MAX_EXPANDED_WIDTH = 520;
+const COLLAPSED_WIDTH = 60;
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 type ChatSidebarProps = {
   usage: UsageSnapshot | null;
@@ -30,6 +37,28 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_EXPANDED_WIDTH);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    if (!stored) {
+      return;
+    }
+    const value = Number.parseInt(stored, 10);
+    if (Number.isFinite(value)) {
+      setSidebarWidth(clamp(value, MIN_EXPANDED_WIDTH, MAX_EXPANDED_WIDTH));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
 
   // Filter conversations based on search query
   const filteredConversations = useMemo(() => {
@@ -50,11 +79,39 @@ export function ChatSidebar({
 
   const isDailyLimitReached = usage ? usage.daily.remaining <= 0 : false;
 
+  const handleResizeStart = useCallback(
+    (event: React.MouseEvent) => {
+      if (isCollapsed) {
+        return;
+      }
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientX - startX;
+        const nextWidth = clamp(startWidth + delta, MIN_EXPANDED_WIDTH, MAX_EXPANDED_WIDTH);
+        setSidebarWidth(nextWidth);
+      };
+
+      const handleMouseUp = () => {
+        document.body.style.userSelect = "";
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    },
+    [isCollapsed, sidebarWidth]
+  );
+
   return (
     <aside 
+      style={{ width: `${isCollapsed ? COLLAPSED_WIDTH : sidebarWidth}px` }}
       className={clsx(
-        "flex h-full flex-col bg-[#F9F9F9] border-r border-slate-200 transition-all duration-300 ease-in-out",
-        isCollapsed ? "w-[60px]" : "w-[260px]"
+        "relative flex h-full flex-col bg-[#F9F9F9] border-r border-slate-200 transition-all duration-300 ease-in-out"
       )}
     >
       <div className="p-4 pb-2">
@@ -210,6 +267,12 @@ export function ChatSidebar({
             </div>
           )}
         </div>
+      )}
+      {!isCollapsed && (
+        <div
+          className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none"
+          onMouseDown={handleResizeStart}
+        />
       )}
     </aside>
   );

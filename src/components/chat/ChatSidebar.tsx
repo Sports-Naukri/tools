@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { MessageSquare, Plus, Search, PanelLeftClose, PanelLeftOpen, Trash2, Lock } from "lucide-react";
 import clsx from "clsx";
 
@@ -37,21 +37,17 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_EXPANDED_WIDTH);
-
-  useEffect(() => {
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") {
-      return;
+      return DEFAULT_EXPANDED_WIDTH;
     }
     const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
     if (!stored) {
-      return;
+      return DEFAULT_EXPANDED_WIDTH;
     }
     const value = Number.parseInt(stored, 10);
-    if (Number.isFinite(value)) {
-      setSidebarWidth(clamp(value, MIN_EXPANDED_WIDTH, MAX_EXPANDED_WIDTH));
-    }
-  }, []);
+    return Number.isFinite(value) ? clamp(value, MIN_EXPANDED_WIDTH, MAX_EXPANDED_WIDTH) : DEFAULT_EXPANDED_WIDTH;
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") {

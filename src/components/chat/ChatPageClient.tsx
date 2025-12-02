@@ -275,6 +275,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   // Holds the most recent outbound request until it succeeds.
   const lastRequestRef = useRef<PendingRequest | null>(null);
   
+  // Keep a ref to the current session to avoid stale closures in callbacks
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
   const ensureConversationPersisted = useCallback(async () => {
     if (!session) {
       return;
@@ -352,15 +358,17 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       persistedMessageSnapshots.current.set(message.id, snapshot);
 
       // Update conversation title based on the first user message
-      if (!titleUpdated && message.role === "user" && !session.conversation.title) {
+      // Use sessionRef to check the latest title state, avoiding stale closures
+      const currentTitle = sessionRef.current.conversation.title;
+      if (!titleUpdated && message.role === "user" && !currentTitle) {
         const aiTitle = await generateTitle(content, session.conversation.modelId);
         const conversationId = session.conversation.id;
         
         // Animate the title update
-        let currentTitle = "";
+        let animatedTitle = "";
         for (let i = 0; i < aiTitle.length; i++) {
-          currentTitle += aiTitle[i];
-          onTitleStream(conversationId, currentTitle);
+          animatedTitle += aiTitle[i];
+          onTitleStream(conversationId, animatedTitle);
           await new Promise((resolve) => setTimeout(resolve, 30));
         }
 

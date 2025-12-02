@@ -275,9 +275,14 @@ function MarkdownContent({ text, isUser, isStreaming = false }: MarkdownContentP
 
   return (
     <div className={clsx("chat-markdown text-sm leading-relaxed", isUser ? "text-white" : "text-slate-900")}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {displayText}
-      </ReactMarkdown>
+      <div className={clsx(isStreaming && "animate-in fade-in duration-500")}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {displayText}
+        </ReactMarkdown>
+      </div>
+      {isStreaming && displayText.length < normalizedText.length && (
+        <span className="inline-block w-1.5 h-4 ml-0.5 align-middle bg-slate-400 animate-pulse" />
+      )}
     </div>
   );
 }

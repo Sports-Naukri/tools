@@ -10,6 +10,7 @@ import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
 import { DEFAULT_CHAT_MODEL_ID } from "@/lib/chat/constants";
+import { logAttachmentFailure } from "@/lib/analytics/attachments";
 import {
   ALLOWED_ATTACHMENT_TYPES,
   MAX_ATTACHMENT_FILE_SIZE,
@@ -25,6 +26,7 @@ import {
   listConversations,
   saveMessage,
   updateConversationMeta,
+  type StoredAttachment,
   type StoredConversation,
   type StoredMessage,
   type StoredToolInvocation,
@@ -32,6 +34,9 @@ import {
 import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
 import type { ToolAwareMessage, ToolInvocationState } from "@/lib/chat/tooling";
 import type { Job } from "@/lib/jobs/types";
+
+const ATTACHMENTS_DISABLED = process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
+const DEFAULT_UPLOADS_DISABLED_MESSAGE = "File uploads are disabled in this environment.";
 
 type SessionState = {
   conversation: StoredConversation;
@@ -48,7 +53,6 @@ export function ChatPageClient() {
   const [history, setHistory] = useState<StoredConversation[]>([]);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   /**
    * Refreshes the list of conversations from local storage.
    */
@@ -250,6 +254,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [uploadsDisabledMessage, setUploadsDisabledMessage] = useState<string | null>(
+    ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null
+  );
+  const attachmentFilesRef = useRef<Map<string, File>>(new Map());
+  const hasUploadingAttachments = attachments.some((attachment) => attachment.status === "uploading");
+  const hasErroredAttachments = attachments.some((attachment) => attachment.status === "error");
   const [input, setInput] = useState("");
   // True when the last request failed and the user can retry it inline.
   const [retryAvailable, setRetryAvailable] = useState(false);
@@ -268,6 +278,87 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
   const readyAttachments = attachments.filter(
     (attachment) => attachment.status === "ready" && typeof attachment.url === "string"
+  );
+
+  const uploadAttachment = useCallback(
+    async (file: File, attachmentId: string) => {
+      attachmentFilesRef.current.set(attachmentId, file);
+      const formData = new FormData();
+      formData.append("file", file);
+      let lastServerCode: string | undefined;
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const payload = await res.json().catch(() => null);
+        if (!res.ok || !payload) {
+          const serverMessage =
+            (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string")
+              ? payload.error
+              : "Upload failed";
+          const serverCode =
+            payload && typeof payload === "object" && "code" in payload && typeof payload.code === "string"
+              ? payload.code
+              : undefined;
+
+          lastServerCode = serverCode;
+          const isConfigError = serverCode === "blob_token_missing" || serverCode === "uploads_disabled";
+
+          if (isConfigError) {
+            setUploadsDisabledMessage(serverMessage || DEFAULT_UPLOADS_DISABLED_MESSAGE);
+          }
+
+          logAttachmentFailure({
+            attachmentId,
+            mimeType: file.type,
+            size: file.size,
+            message: serverMessage || "Upload failed",
+            source: "upload_error",
+            errorCode: serverCode,
+            conversationId: session.conversation.id,
+          });
+
+          throw new Error(serverMessage || "Upload failed");
+        }
+
+        const data = payload as { url?: string; name?: string; size?: number; type?: string };
+        if (!data.url) {
+          throw new Error("Upload response missing file URL");
+        }
+        attachmentFilesRef.current.delete(attachmentId);
+        setAttachments((prev) =>
+          prev.map((item) => (item.id === attachmentId ? { ...item, url: data.url, status: "ready" } : item))
+        );
+      } catch (uploadError) {
+        const uploadMessage = uploadError instanceof Error ? uploadError.message : "Upload failed";
+        const isConfigError = lastServerCode === "blob_token_missing" || lastServerCode === "uploads_disabled";
+        const errorCode = lastServerCode;
+        const attachmentError = isConfigError ? undefined : uploadMessage;
+        setAttachments((prev) =>
+          prev.map((item) =>
+            item.id === attachmentId ? { ...item, status: "error", error: attachmentError } : item
+          )
+        );
+        if (isConfigError) {
+          setComposerError(null);
+        } else {
+          setComposerError(uploadMessage);
+        }
+        logAttachmentFailure({
+          attachmentId,
+          mimeType: file.type,
+          size: file.size,
+          message: uploadMessage,
+          source: "upload_error",
+          errorCode,
+          conversationId: session.conversation.id,
+        });
+      } finally {
+        lastServerCode = undefined;
+      }
+    },
+    [session.conversation.id]
   );
 
   // Holds the most recent outbound request until it succeeds.
@@ -339,19 +430,29 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           result: inv.result,
         }));
         const clonedParts = message.parts ? cloneParts(message.parts) : undefined;
-        
+        const attachmentsForStorage = extractAttachmentsFromMessageParts(message);
         const snapshot = buildPersistenceSnapshot({
           content: normalizedContent,
           documents,
           toolInvocations: toolInvocations ?? [],
           parts: clonedParts,
+          attachments: attachmentsForStorage,
         });
-        return { message, content: normalizedContent, documents, toolInvocations, parts: clonedParts, snapshot };
+        return {
+          message,
+          content: normalizedContent,
+          documents,
+          toolInvocations,
+          parts: clonedParts,
+          attachments: attachmentsForStorage,
+          snapshot,
+        };
       })
-      .filter(({ content, documents, toolInvocations, parts }) => {
+      .filter(({ content, documents, toolInvocations, parts, attachments }) => {
         const hasTools = toolInvocations && toolInvocations.length > 0;
         const hasParts = parts && parts.length > 0;
-        return content.length > 0 || documents.length > 0 || hasTools || hasParts;
+        const hasAttachments = attachments && attachments.length > 0;
+        return content.length > 0 || documents.length > 0 || hasTools || hasParts || hasAttachments;
       })
       .filter(({ message, snapshot }) => persistedMessageSnapshots.current.get(message.id) !== snapshot);
 
@@ -362,7 +463,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     await ensureConversationPersisted();
     let titleUpdated = false;
 
-    for (const { message, content, documents, toolInvocations, parts, snapshot } of pendingSaves) {
+    for (const { message, content, documents, toolInvocations, parts, attachments, snapshot } of pendingSaves) {
       await saveMessage({
         id: message.id,
         conversationId: session.conversation.id,
@@ -371,6 +472,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         documents: documents.length ? documents.map(cloneDocument) : undefined,
         toolInvocations,
         parts,
+        attachments: attachments.length ? attachments : undefined,
         createdAt: new Date().toISOString(),
       });
       persistedMessageSnapshots.current.set(message.id, snapshot);
@@ -575,6 +677,16 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     const hasText = trimmed.length > 0;
     const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
 
+    if (hasUploadingAttachments) {
+      setComposerError("Please wait for uploads to finish before sending.");
+      return;
+    }
+
+    if (hasErroredAttachments) {
+      setComposerError("Remove or retry attachments that failed to upload.");
+      return;
+    }
+
     if (!hasText && currentAttachments.length === 0 && !selectedJob) {
       return;
     }
@@ -619,6 +731,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           name: attachment.name,
           mimeType: attachment.type,
           mediaType: attachment.type,
+          size: attachment.size,
+          attachmentId: attachment.id,
         } as UIPart
       );
     }
@@ -675,8 +789,24 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     async (files: FileList | null) => {
       if (!files) return;
 
+      if (uploadsDisabledMessage) {
+        logAttachmentFailure({
+          message: uploadsDisabledMessage,
+          source: "uploads_disabled",
+          errorCode: "uploads_disabled",
+          conversationId: session.conversation.id,
+        });
+        return;
+      }
+
       if (attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
         setComposerError(`You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`);
+        logAttachmentFailure({
+          message: "Attachment limit reached",
+          source: "client_validation",
+          errorCode: "limit_exceeded",
+          conversationId: session.conversation.id,
+        });
         return;
       }
 
@@ -691,11 +821,29 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       for (const file of selectedFiles) {
         if (file.size > MAX_ATTACHMENT_FILE_SIZE) {
           errorMessage = `"${file.name}" is larger than 5MB.`;
+          logAttachmentFailure({
+            attachmentId: file.name,
+            mimeType: file.type,
+            size: file.size,
+            message: errorMessage,
+            source: "client_validation",
+            errorCode: "file_too_large",
+            conversationId: session.conversation.id,
+          });
           continue;
         }
 
         if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
           errorMessage = `"${file.name}" type is not supported.`;
+          logAttachmentFailure({
+            attachmentId: file.name,
+            mimeType: file.type,
+            size: file.size,
+            message: errorMessage,
+            source: "client_validation",
+            errorCode: "unsupported_type",
+            conversationId: session.conversation.id,
+          });
           continue;
         }
 
@@ -707,35 +855,39 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           type: file.type,
           status: "uploading",
         };
+        attachmentFilesRef.current.set(id, file);
         setAttachments((prev) => [...prev, preview]);
-        const formData = new FormData();
-        formData.append("file", file);
-        try {
-          const res = await fetch("/api/upload", {
-            method: "POST",
-            body: formData,
-          });
-          if (!res.ok) throw new Error("Upload failed");
-          const data = await res.json();
-          setAttachments((prev) =>
-            prev.map((item) => (item.id === id ? { ...item, url: data.url, status: "ready" } : item))
-          );
-        } catch (uploadError) {
-          console.error(uploadError);
-          setAttachments((prev) =>
-            prev.map((item) => (item.id === id ? { ...item, status: "error", error: "Upload failed" } : item))
-          );
-        }
+        void uploadAttachment(file, id);
       }
 
       setComposerError(errorMessage);
     },
-    [attachments.length]
+    [attachments.length, uploadsDisabledMessage, session.conversation.id, uploadAttachment]
   );
 
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
+    attachmentFilesRef.current.delete(attachmentId);
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== attachmentId));
   }, []);
+
+  const handleRetryAttachment = useCallback(
+    (attachmentId: string) => {
+      const file = attachmentFilesRef.current.get(attachmentId);
+      if (!file) {
+        setComposerError("Original file is no longer available. Please reattach it.");
+        return;
+      }
+      setAttachments((prev) =>
+        prev.map((attachment) =>
+          attachment.id === attachmentId
+            ? { ...attachment, status: "uploading", error: undefined }
+            : attachment
+        )
+      );
+      void uploadAttachment(file, attachmentId);
+    },
+    [uploadAttachment]
+  );
 
   const isNewConversation = session.conversation.messageCount === 0;
   const dailyLimitReached = session.usage.daily.remaining <= 0;
@@ -826,6 +978,10 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           }
           selectedJob={selectedJob}
           onRemoveJob={handleRemoveJob}
+          attachmentsDisabledMessage={uploadsDisabledMessage}
+          hasUploadingAttachments={hasUploadingAttachments}
+          hasErroredAttachments={hasErroredAttachments}
+          onRetryAttachment={handleRetryAttachment}
         />
       </div>
 
@@ -877,36 +1033,18 @@ const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
  * Handles reconstruction of file attachments and document tool outputs.
  */
 function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
-  if (message.parts?.length) {
-    return {
-      id: message.id,
-      role: message.role,
-      parts: cloneParts(message.parts as UIPart[]),
-    } as UIMessage;
-  }
+  const hasExplicitParts = Boolean(message.parts?.length);
+  let parts: UIPart[] = hasExplicitParts ? cloneParts(message.parts as UIPart[]) : [];
 
-  const parts: UIPart[] = [];
-
-  if (message.content) {
-    parts.push({ type: "text", text: message.content } as UIPart);
-  }
-
-  if (message.attachments?.length) {
-    for (const attachment of message.attachments) {
-      if (!attachment.url) continue;
-      parts.push(
-        {
-          type: "file",
-          url: attachment.url,
-          name: attachment.name,
-          mimeType: attachment.type,
-          mediaType: attachment.type,
-        } as UIPart
-      );
+  if (!hasExplicitParts) {
+    if (message.content) {
+      parts.push({ type: "text", text: message.content } as UIPart);
     }
   }
 
-  if (message.documents?.length) {
+  parts = hydrateAttachmentsIntoParts(parts, message.attachments);
+
+  if (!hasExplicitParts && message.documents?.length) {
     for (const document of message.documents) {
       parts.push(
         {
@@ -919,7 +1057,7 @@ function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
     }
   }
 
-  if (message.toolInvocations?.length) {
+  if (!hasExplicitParts && message.toolInvocations?.length) {
     for (const invocation of message.toolInvocations) {
       parts.push({
         type: "tool-invocation",
@@ -1048,6 +1186,7 @@ type SnapshotInput = {
   documents: CanvasDocument[];
   toolInvocations: StoredToolInvocation[];
   parts?: UIPart[];
+  attachments?: StoredAttachment[];
 };
 
 function buildStoredMessageSnapshot(message: StoredMessage): string {
@@ -1056,15 +1195,17 @@ function buildStoredMessageSnapshot(message: StoredMessage): string {
     documents: message.documents ?? [],
     toolInvocations: message.toolInvocations ?? [],
     parts: message.parts ?? null,
+    attachments: message.attachments ?? [],
   });
 }
 
-function buildPersistenceSnapshot({ content, documents, toolInvocations, parts }: SnapshotInput): string {
+function buildPersistenceSnapshot({ content, documents, toolInvocations, parts, attachments }: SnapshotInput): string {
   return JSON.stringify({
     content,
     documents,
     toolInvocations,
     parts: parts ?? null,
+    attachments: attachments ?? [],
   });
 }
 
@@ -1073,6 +1214,80 @@ function cloneParts(parts: UIPart[]): UIPart[] {
     return structuredClone(parts);
   }
   return JSON.parse(JSON.stringify(parts));
+}
+
+type FileUIPart = UIPart & {
+  type: "file";
+  url?: string;
+  name?: string;
+  mimeType?: string;
+  mediaType?: string;
+  size?: number;
+  attachmentId?: string;
+};
+
+function extractAttachmentsFromMessageParts(message: UIMessage): StoredAttachment[] {
+  if (!message.parts?.length) {
+    return [];
+  }
+  const messageId = (message.id ?? "message") as string;
+  const attachments: StoredAttachment[] = [];
+  message.parts.forEach((part, index) => {
+    const attachment = convertPartToStoredAttachment(part, index, messageId);
+    if (attachment) {
+      attachments.push(attachment);
+    }
+  });
+  return attachments;
+}
+
+function convertPartToStoredAttachment(part: UIPart, index: number, messageId: string): StoredAttachment | null {
+  if (part.type !== "file") {
+    return null;
+  }
+  const filePart = part as FileUIPart;
+  if (typeof filePart.url !== "string") {
+    return null;
+  }
+  const fallbackId = filePart.attachmentId ?? `${messageId}-attachment-${index}`;
+  const attachmentName = filePart.name && filePart.name.length ? filePart.name : "Attachment";
+  const attachmentType = filePart.mimeType ?? filePart.mediaType ?? "application/octet-stream";
+  const attachmentSize = typeof filePart.size === "number" ? filePart.size : 0;
+  return {
+    id: fallbackId,
+    name: attachmentName,
+    size: attachmentSize,
+    type: attachmentType,
+    url: filePart.url,
+  };
+}
+
+function hydrateAttachmentsIntoParts(parts: UIPart[], attachments?: StoredAttachment[]): UIPart[] {
+  if (!attachments?.length) {
+    return parts;
+  }
+  const existingUrls = new Set(
+    parts
+      .filter((part): part is FileUIPart => part.type === "file")
+      .map((part) => part.url)
+      .filter((url): url is string => Boolean(url))
+  );
+  const nextParts = [...parts];
+  for (const attachment of attachments) {
+    if (!attachment.url || existingUrls.has(attachment.url)) {
+      continue;
+    }
+    nextParts.push({
+      type: "file",
+      url: attachment.url,
+      name: attachment.name,
+      mimeType: attachment.type,
+      mediaType: attachment.type,
+      size: attachment.size,
+      attachmentId: attachment.id,
+    } as UIPart);
+  }
+  return nextParts;
 }
 
 /**

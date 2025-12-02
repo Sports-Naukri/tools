@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEventHandler, type FormEventHandler, type KeyboardEvent } from "react";
-import { ArrowUp, Paperclip, X, ChevronDown, Globe, Zap, Loader2, Check, Lock } from "lucide-react";
+import { ArrowUp, Paperclip, X, ChevronDown, Globe, Zap, Loader2, Check, Lock, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 
 import type { AttachmentPreview } from "@/lib/chat/types";
@@ -18,6 +18,7 @@ type ChatComposerProps = {
   usage?: UsageSnapshot | null;
   attachments: AttachmentPreview[];
   onRemoveAttachment: (id: string) => void;
+  onRetryAttachment?: (id: string) => void;
   onFileSelect: (files: FileList | null) => void;
   error?: string | null;
   modelId?: string;
@@ -27,6 +28,9 @@ type ChatComposerProps = {
   onNewChat?: () => void;
   selectedJob?: Job | null;
   onRemoveJob?: () => void;
+  attachmentsDisabledMessage?: string | null;
+  hasUploadingAttachments?: boolean;
+  hasErroredAttachments?: boolean;
 };
 
 const MAX_INPUT_LENGTH = 4000;
@@ -44,6 +48,7 @@ export function ChatComposer({
   usage,
   attachments,
   onRemoveAttachment,
+  onRetryAttachment,
   onFileSelect,
   error,
   modelId,
@@ -53,9 +58,13 @@ export function ChatComposer({
   onNewChat,
   selectedJob,
   onRemoveJob,
+  attachmentsDisabledMessage,
+  hasUploadingAttachments = false,
+  hasErroredAttachments = false,
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
+  const primaryError = attachmentsDisabledMessage ?? error;
 
   // Handle Enter key to submit, Shift+Enter for new line
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -70,6 +79,15 @@ export function ChatComposer({
 
   const currentModel = CHAT_MODELS.find((m) => m.id === modelId) || CHAT_MODELS[0];
   const showCharCount = input.length > MAX_INPUT_LENGTH * 0.8;
+
+  const hasTypedInput = Boolean(input.trim());
+  const hasPayload = hasTypedInput || attachments.length > 0 || Boolean(selectedJob);
+  const sendDisabled =
+    disabled ||
+    isStreaming ||
+    !hasPayload ||
+    hasUploadingAttachments ||
+    hasErroredAttachments;
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 pb-6">
@@ -126,26 +144,74 @@ export function ChatComposer({
                 </button>
               </div>
             )}
-            {attachments.map((att) => (
-              <div
-                key={att.id}
-                className={clsx(
-                  "relative flex items-center gap-2 rounded-lg border px-3 py-2 pr-8 text-sm",
-                  att.status === "error"
-                    ? "border-red-200 bg-red-50 text-red-600"
-                    : "border-slate-200 bg-slate-50 text-slate-700"
-                )}
-              >
-                <span className="max-w-[150px] truncate font-medium">{att.name}</span>
-                <button
-                  type="button"
-                  onClick={() => onRemoveAttachment(att.id)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+            {attachments.map((att) => {
+              const isUploading = att.status === "uploading";
+              const isError = att.status === "error";
+              const statusText = isUploading
+                ? "Uploading…"
+                : isError
+                ? att.error ?? "Upload failed"
+                : "Ready";
+
+              return (
+                <div
+                  key={att.id}
+                  className={clsx(
+                    "flex items-center justify-between gap-2 rounded-lg border pl-3 pr-1 py-2 text-sm",
+                    isError
+                      ? "border-red-200 bg-red-50 text-red-600"
+                      : isUploading
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-slate-200 bg-slate-50 text-slate-700"
+                  )}
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-slate-500 shrink-0">
+                      {isError ? (
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      ) : isUploading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Check className="h-3.5 w-3.5 text-emerald-500" />
+                      )}
+                    </span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="truncate font-medium">{att.name}</span>
+                      <span className={clsx("text-[11px] truncate", isError ? "text-red-600" : "text-slate-500")}>{statusText}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isError && (
+                      <button
+                        type="button"
+                          onClick={() => onRetryAttachment?.(att.id)}
+                        className="rounded-full px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                      >
+                        Retry
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onRemoveAttachment(att.id)}
+                      className="rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {hasUploadingAttachments && (
+          <div className="mx-4 mt-2 text-xs text-slate-500">
+            Uploads in progress—please wait before sending.
+          </div>
+        )}
+        {hasErroredAttachments && (
+          <div className="mx-4 mt-1 text-xs text-red-600">
+            Fix or remove failed uploads to continue.
           </div>
         )}
 
@@ -261,13 +327,26 @@ export function ChatComposer({
               multiple
               ref={fileInputRef}
               className="hidden"
-              onChange={(e) => onFileSelect(e.target.files)}
+              onChange={(e) => {
+                onFileSelect(e.target.files);
+                if (e.target.value) {
+                  e.target.value = "";
+                }
+              }}
+              data-testid="chat-attachment-input"
             />
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                if (attachmentsDisabledMessage) {
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
               className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-              title="Add attachment"
+              title={attachmentsDisabledMessage ?? "Add attachment"}
+              aria-label="Add attachment"
+              disabled={Boolean(attachmentsDisabledMessage)}
             >
               <Paperclip className="h-4 w-4" />
             </button>
@@ -276,10 +355,10 @@ export function ChatComposer({
           <div className="flex items-center gap-2">
             <button
               type="submit"
-              disabled={disabled || isStreaming || (!input.trim() && attachments.length === 0)}
+              disabled={sendDisabled}
               className={clsx(
                 "flex h-8 w-8 items-center justify-center rounded-lg transition-all",
-                input.trim() || attachments.length > 0
+                hasPayload && !sendDisabled
                   ? "bg-[#006dff] text-white hover:bg-[#0056cc] shadow-sm"
                   : "bg-slate-100 text-slate-300 cursor-not-allowed"
               )}
@@ -290,10 +369,12 @@ export function ChatComposer({
         </div>
       </form>
       
-      {error && <p className="mt-2 text-center text-xs text-red-500">{error}</p>}
+      {primaryError && <p className="mt-2 text-center text-xs text-red-500">{primaryError}</p>}
       
       <div className="mt-2 flex items-center justify-between px-1 text-xs text-slate-400">
-        <span>AI can make mistakes. Please double check responses.</span>
+        <span>
+          AI can make mistakes. Please double check responses.
+        </span>
         {usage && (
           <span className={clsx(
             "font-medium",

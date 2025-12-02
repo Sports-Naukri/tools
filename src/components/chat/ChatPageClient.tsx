@@ -52,7 +52,6 @@ export function ChatPageClient() {
    */
   const refreshHistory = useCallback(async (): Promise<StoredConversation[]> => {
     const conversations = await listConversations(20);
-    syncChatTitleCounter(conversations);
     setHistory(conversations);
     return conversations;
   }, []);
@@ -143,6 +142,16 @@ export function ChatPageClient() {
     [refreshHistory]
   );
 
+  const handleTitleStream = useCallback((conversationId: string, newTitle: string) => {
+    setSession((prev) => {
+      if (!prev || prev.conversation.id !== conversationId) {
+        return prev;
+      }
+      return { ...prev, conversation: { ...prev.conversation, title: newTitle } };
+    });
+    setHistory((prev) => prev.map((conversation) => (conversation.id === conversationId ? { ...conversation, title: newTitle } : conversation)));
+  }, []);
+
   const handleDeleteConversation = useCallback(
     async (conversationId: string) => {
       await deleteConversation(conversationId);
@@ -191,6 +200,7 @@ export function ChatPageClient() {
         session={session}
         onUsageChange={(usage) => setSession((prev) => (prev ? { ...prev, usage } : prev))}
         onConversationUpdate={handleConversationUpdate}
+        onTitleStream={handleTitleStream}
         loadUsage={loadUsage}
         refreshHistory={refreshHistory}
         onNewChat={handleNewChat}
@@ -203,6 +213,7 @@ type ChatWorkspaceProps = {
   session: SessionState;
   onUsageChange: (usage: UsageSnapshot) => void;
   onConversationUpdate: (conversation: StoredConversation) => void;
+  onTitleStream: (conversationId: string, newTitle: string) => void;
   loadUsage: (conversationId: string) => Promise<UsageSnapshot>;
   refreshHistory: () => Promise<StoredConversation[]>;
   onNewChat: () => void;
@@ -231,7 +242,7 @@ type PendingRequest = {
  * Component responsible for the active chat interface.
  * Manages the message list, composer, and canvas panel.
  */
-function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage, refreshHistory, onNewChat }: ChatWorkspaceProps) {
+function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleStream, loadUsage, refreshHistory, onNewChat }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
   const isSearchEnabled = false;
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
@@ -278,6 +289,21 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
 
   const messagesRef = useRef<ToolAwareMessage[]>([]);
   
+  const generateTitle = useCallback(async (messageContent: string, modelId: string) => {
+    try {
+      const res = await fetch("/api/chat/title", {
+        method: "POST",
+        body: JSON.stringify({ message: messageContent, modelId }),
+      });
+      if (!res.ok) return deriveTitle(messageContent);
+      const data = await res.json();
+      return data.title as string;
+    } catch (error) {
+      console.error("Failed to generate title:", error);
+      return deriveTitle(messageContent);
+    }
+  }, []);
+
   // Persist messages only after the assistant responds successfully.
   const handleFinish = useCallback(async (completedMessage?: ToolAwareMessage) => {
     let currentMessages = messagesRef.current;
@@ -326,17 +352,28 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, loadUsage
       persistedMessageSnapshots.current.set(message.id, snapshot);
 
       // Update conversation title based on the first user message
-      if (!titleUpdated && message.role === "user" && isPlaceholderTitle(session.conversation.title)) {
+      if (!titleUpdated && message.role === "user" && !session.conversation.title) {
+        const aiTitle = await generateTitle(content, session.conversation.modelId);
+        const conversationId = session.conversation.id;
+        
+        // Animate the title update
+        let currentTitle = "";
+        for (let i = 0; i < aiTitle.length; i++) {
+          currentTitle += aiTitle[i];
+          onTitleStream(conversationId, currentTitle);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        }
+
         const updatedConversation: StoredConversation = {
           ...session.conversation,
-          title: deriveTitle(content),
+          title: aiTitle,
         };
         await updateConversationMeta(session.conversation.id, { title: updatedConversation.title });
         onConversationUpdate(updatedConversation);
         titleUpdated = true;
       }
     }
-  }, [ensureConversationPersisted, onConversationUpdate, session.conversation]);
+  }, [ensureConversationPersisted, onConversationUpdate, onTitleStream, session.conversation, generateTitle]);
 
   // Initialize the AI SDK chat hook
   const { messages, sendMessage, status, setMessages } = useChat<ToolAwareMessage>({
@@ -745,7 +782,7 @@ async function createEmptyConversation({ modelId, persist = true }: { modelId: s
   const now = new Date().toISOString();
   const conversation: StoredConversation = {
     id: nanoid(10),
-    title: getNextChatTitle(),
+    title: "",
     modelId,
     createdAt: now,
     updatedAt: now,
@@ -913,29 +950,6 @@ function buildPersistenceSnapshot(content: string, documents: CanvasDocument[]):
   });
 }
 
-const CHAT_TITLE_COUNTER_KEY = "sn-chat-title-counter";
-const CHAT_PLACEHOLDER_REGEX = /^chat\s+(\d+)$/i;
-
-/**
- * Generates the next default chat title (e.g., "Chat 1", "Chat 2").
- */
-function getNextChatTitle() {
-  const nextValue = incrementChatCounter();
-  return `Chat ${nextValue}`;
-}
-
-/**
- * Increments the persistent chat counter in local storage.
- */
-function incrementChatCounter() {
-  const current = getStoredChatCounter();
-  const next = current + 1;
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(CHAT_TITLE_COUNTER_KEY, String(next));
-  }
-  return next;
-}
-
 /**
  * Ensures a message has a text summary if it contains a document.
  * Adds a generated summary if one is missing.
@@ -963,50 +977,3 @@ function buildDocumentSummary(document: CanvasDocument): string {
   return `Here is your generated ${readableType}.`;
 }
 
-/**
- * Retrieves the current chat counter value from local storage.
- */
-function getStoredChatCounter() {
-  if (typeof window === "undefined") {
-    return 0;
-  }
-  const raw = window.localStorage.getItem(CHAT_TITLE_COUNTER_KEY);
-  const parsed = raw ? Number.parseInt(raw, 10) : 0;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-/**
- * Syncs the local storage counter with the highest number found in existing conversations.
- * Prevents duplicate default titles when clearing storage or switching devices.
- */
-function syncChatTitleCounter(conversations: StoredConversation[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const maxPlaceholder = conversations.reduce((max, conversation) => {
-    const match = conversation.title?.match(CHAT_PLACEHOLDER_REGEX);
-    if (!match) {
-      return max;
-    }
-    const value = Number.parseInt(match[1], 10);
-    return Number.isFinite(value) ? Math.max(max, value) : max;
-  }, 0);
-  const stored = getStoredChatCounter();
-  if (maxPlaceholder > stored) {
-    window.localStorage.setItem(CHAT_TITLE_COUNTER_KEY, String(maxPlaceholder));
-  }
-}
-
-/**
- * Checks if a title is a default placeholder (e.g., "New Chat", "Chat 1").
- */
-function isPlaceholderTitle(title?: string | null) {
-  if (!title) {
-    return true;
-  }
-  const trimmed = title.trim();
-  if (!trimmed) {
-    return true;
-  }
-  return trimmed.toLowerCase() === "new chat" || CHAT_PLACEHOLDER_REGEX.test(trimmed);
-}

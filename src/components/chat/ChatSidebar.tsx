@@ -184,7 +184,11 @@ export function ChatSidebar({
                 {isCollapsed ? (
                   <MessageSquare className="h-4 w-4" />
                 ) : (
-                  <span className="line-clamp-1 pr-6">{conversation.title || "Untitled conversation"}</span>
+                  conversation.title ? (
+                    <span className="line-clamp-1 pr-6">{conversation.title}</span>
+                  ) : (
+                    <div className="h-4 w-24 bg-slate-200 rounded animate-pulse" />
+                  )
                 )}
               </button>
               

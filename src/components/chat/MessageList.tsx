@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, FileText, Loader2, User, RefreshCw } from "lucide-react";
+import { Bot, FileText, Loader2, User, RefreshCw, Briefcase } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
 
 import type { ToolAwareMessage } from "@/lib/chat/tooling";
 import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
+import { JOB_SEARCH_TOOL_NAME } from "@/lib/jobs/tools";
+import { JobList } from "./JobCard";
+import type { JobResponse, Job } from "@/lib/jobs/types";
 
 export type MessageListProps = {
   messages: ToolAwareMessage[];
@@ -19,6 +22,7 @@ export type MessageListProps = {
   onRetry?: () => void;
   onSuggestionClick?: (text: string) => void;
   isLimitReached?: boolean;
+  onSelectJob?: (job: Job) => void;
 };
 
 const STARTER_QUESTIONS = [
@@ -40,7 +44,8 @@ export function MessageList({
   showRetry, 
   onRetry,
   onSuggestionClick,
-  isLimitReached
+  isLimitReached,
+  onSelectJob
 }: MessageListProps) {
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
@@ -91,6 +96,7 @@ export function MessageList({
               onSelectDocument={onSelectDocument}
               documentLookup={documentLookup}
               isStreamingAssistant={isAssistantStreaming}
+              onSelectJob={onSelectJob}
             />
             {showRetry && index === messages.length - 1 && (
               <div className="flex justify-end px-4 items-center gap-2">
@@ -121,13 +127,14 @@ type MessageBubbleProps = {
   onSelectDocument?: (documentId: string) => void;
   documentLookup: Partial<Record<string, CanvasDocument>>;
   isStreamingAssistant?: boolean;
+  onSelectJob?: (job: Job) => void;
 };
 
 /**
  * Individual message bubble component.
  * Renders text content and document chips based on message parts.
  */
-function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingAssistant = false }: MessageBubbleProps) {
+function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingAssistant = false, onSelectJob }: MessageBubbleProps) {
   const isUser = message.role === "user";
   return (
     <div className={clsx("flex gap-4", isUser ? "justify-end" : "justify-start")}>
@@ -146,6 +153,9 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
       >
         {message.parts.map((part, index) => {
           if (part.type === 'text') {
+            if (part.text.startsWith(":::job-context")) {
+              return <JobContextChip key={index} text={part.text} />;
+            }
             return (
               <MarkdownContent key={index} text={part.text} isUser={isUser} isStreaming={isStreamingAssistant} />
             );
@@ -168,6 +178,14 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
               />
             );
           }
+
+          if (isJobSearchToolPart(part)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const output = (part as any).output || (part as any).toolInvocation?.result;
+            if (!output) return null;
+            return <JobList key={index} response={output as JobResponse} onSelectJob={onSelectJob} />;
+          }
+
           return null;
         })}
       </div>
@@ -203,7 +221,33 @@ function DocumentChip({ document, onSelectDocument }: DocumentChipProps) {
   );
 }
 
+function JobContextChip({ text }: { text: string }) {
+  const data = useMemo(() => extractJobContext(text), [text]);
+  if (!data) return null;
+
+  return (
+    <div className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 w-fit mb-2">
+      <Briefcase className="h-3.5 w-3.5" />
+      <span>Asking about: {data.title} at {data.employer}</span>
+    </div>
+  );
+}
+
+function extractJobContext(text: string) {
+  const match = text.match(/:::job-context\s+(.+?)\s+:::/);
+  if (!match) return null;
+  try {
+    const data = JSON.parse(match[1]);
+    const title = data.title || "Job";
+    const employer = data.employer || "Company";
+    return { title, employer };
+  } catch {
+    return null;
+  }
+}
+
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
+const JOB_SEARCH_PART_TYPE = `tool-${JOB_SEARCH_TOOL_NAME}`;
 
 type UnknownToolPart = {
   type?: string;
@@ -214,6 +258,28 @@ type UnknownToolPart = {
 
 function isDocumentToolPart(part: unknown): part is UnknownToolPart {
   return Boolean(part && typeof part === "object" && (part as UnknownToolPart).type === DOCUMENT_PART_TYPE);
+}
+
+function isJobSearchToolPart(part: unknown): part is UnknownToolPart {
+  if (!part || typeof part !== "object") return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = part as any;
+
+  // Check for custom part type
+  if (p.type === JOB_SEARCH_PART_TYPE && p.output) {
+    return true;
+  }
+
+  // Check for standard SDK tool invocation
+  if (
+    p.type === "tool-invocation" &&
+    p.toolInvocation?.toolName === JOB_SEARCH_TOOL_NAME &&
+    p.toolInvocation?.result
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 type MarkdownContentProps = {

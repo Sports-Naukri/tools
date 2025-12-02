@@ -7,6 +7,7 @@ import clsx from "clsx";
 import type { AttachmentPreview } from "@/lib/chat/types";
 import type { UsageSnapshot } from "@/lib/chat/types";
 import { CHAT_MODELS } from "@/lib/chat/constants";
+import type { Job } from "@/lib/jobs/types";
 
 type ChatComposerProps = {
   input: string;
@@ -24,6 +25,8 @@ type ChatComposerProps = {
   isSearchEnabled?: boolean;
   limitReachedReason?: 'daily' | 'chat' | null;
   onNewChat?: () => void;
+  selectedJob?: Job | null;
+  onRemoveJob?: () => void;
 };
 
 const MAX_INPUT_LENGTH = 4000;
@@ -48,6 +51,8 @@ export function ChatComposer({
   isSearchEnabled,
   limitReachedReason,
   onNewChat,
+  selectedJob,
+  onRemoveJob,
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
@@ -107,8 +112,20 @@ export function ChatComposer({
         )}
 
         {/* Attachments Preview */}
-        {attachments.length > 0 && (
+        {(attachments.length > 0 || selectedJob) && (
           <div className="flex flex-wrap gap-2 p-3 pb-0">
+            {selectedJob && (
+              <div className="relative flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 pr-8 text-sm text-blue-700">
+                <span className="max-w-[200px] truncate font-medium">Job: {selectedJob.title}</span>
+                <button
+                  type="button"
+                  onClick={onRemoveJob}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full p-1 text-blue-400 hover:bg-blue-100 hover:text-blue-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             {attachments.map((att) => (
               <div
                 key={att.id}

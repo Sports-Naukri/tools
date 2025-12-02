@@ -1,4 +1,5 @@
 import Dexie, { type Table } from "dexie";
+import type { UIMessage } from "@ai-sdk/react";
 
 import type { CanvasDocument } from "@/lib/canvas/documents";
 
@@ -10,6 +11,16 @@ export type StoredAttachment = {
   url?: string;
 };
 
+type SerializedMessagePart = NonNullable<UIMessage["parts"]>[number];
+
+export type StoredToolInvocation = {
+  state: 'result' | 'call' | 'partial-call';
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  result?: unknown;
+};
+
 export type StoredMessage = {
   id: string;
   conversationId: string;
@@ -18,6 +29,8 @@ export type StoredMessage = {
   createdAt: string;
   attachments?: StoredAttachment[];
   documents?: CanvasDocument[];
+  toolInvocations?: StoredToolInvocation[];
+  parts?: SerializedMessagePart[];
   error?: string | null;
 };
 

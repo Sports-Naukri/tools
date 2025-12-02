@@ -24,6 +24,9 @@ import {
   type DocumentInput,
   type GeneratedDocument,
 } from "@/lib/canvas/documents";
+import { fetchJobs } from "@/lib/jobs/service";
+import { JOB_SEARCH_TOOL_NAME, jobSearchSchema, type JobSearchInput } from "@/lib/jobs/tools";
+import type { JobResponse } from "@/lib/jobs/types";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["bom1", "sin1", "fra1"];
@@ -95,6 +98,14 @@ export async function POST(req: Request) {
             return document;
           },
         }),
+        [JOB_SEARCH_TOOL_NAME]: tool<JobSearchInput>({
+          description: "Search for sports-related jobs, internships, and career opportunities on SportsNaukri.com.",
+          inputSchema: jobSearchSchema,
+          async execute(input) {
+            const results = await fetchJobs(input);
+            return results;
+          },
+        }),
       },
       onFinish: ({ usage }) => {
         console.log("Token Usage Report:", {
@@ -140,6 +151,7 @@ export async function POST(req: Request) {
 
 const systemPrompt = `You are SportsNaukri's expert career assistant.
 Respond conversationally for standard coaching or Q&A.
+When the user asks about jobs, vacancies, or career opportunities, use the ${JOB_SEARCH_TOOL_NAME} tool to find real listings.
 When the user explicitly asks for a structured asset (resume, cover letter, report, essay) or when a structured document would clearly help, call the ${DOCUMENT_TOOL_NAME} tool exactly once and summarize the output in the live chat instead of pasting the whole document.
 Only output plain chat responses outside of the tool.`;
 
@@ -267,6 +279,7 @@ function getTextFromParts(parts: UIPart[]): string {
 
 const ALLOWED_PART_TYPES = new Set(["text", "output_text", "file"]);
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
+const JOB_SEARCH_PART_TYPE = `tool-${JOB_SEARCH_TOOL_NAME}`;
 
 function normalizePart(part: unknown): UIPart | null {
   if (!part || typeof part !== "object") {
@@ -282,6 +295,10 @@ function normalizePart(part: unknown): UIPart | null {
       return { type: "text", text: summary } as UIPart;
     }
   }
+  // Pass through job search results as-is so the client can render them
+  if (isJobSearchToolPart(candidate)) {
+    return { ...candidate } as UIPart;
+  }
   return null;
 }
 
@@ -294,6 +311,11 @@ function isSupportedModelMessage(message: unknown) {
 }
 
 type DocumentToolPart = {
+  type?: string;
+  output?: unknown;
+};
+
+type JobSearchToolPart = {
   type?: string;
   output?: unknown;
 };
@@ -313,4 +335,11 @@ function summarizeDocumentPart(part: DocumentToolPart): string | null {
     return `Generated ${readableType} titled "${title}".`;
   }
   return `Generated ${readableType}.`;
+}
+
+function isJobSearchToolPart(part: JobSearchToolPart): part is JobSearchToolPart & {
+  type: string;
+  output: JobResponse;
+} {
+  return Boolean(part.type === JOB_SEARCH_PART_TYPE && part.output);
 }

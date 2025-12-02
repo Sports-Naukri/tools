@@ -27,9 +27,11 @@ import {
   updateConversationMeta,
   type StoredConversation,
   type StoredMessage,
+  type StoredToolInvocation,
 } from "@/lib/chat/storage";
 import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
-import type { ToolAwareMessage } from "@/lib/chat/tooling";
+import type { ToolAwareMessage, ToolInvocationState } from "@/lib/chat/tooling";
+import type { Job } from "@/lib/jobs/types";
 
 type SessionState = {
   conversation: StoredConversation;
@@ -246,6 +248,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
   const isSearchEnabled = false;
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   // True when the last request failed and the user can retry it inline.
@@ -255,12 +258,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   
   // Track persisted snapshots to avoid unnecessary writes to storage
   const persistedMessageSnapshots = useRef(
-    new Map(
-      session.messages.map((message) => [
-        message.id,
-        buildPersistenceSnapshot(message.content ?? "", message.documents ?? []),
-      ])
-    )
+    new Map(session.messages.map((message) => [message.id, buildStoredMessageSnapshot(message)]))
   );
 
   const initialMessages = useMemo<ToolAwareMessage[]>(
@@ -333,10 +331,28 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       .map((message) => {
         const normalizedContent = getTextContent(message);
         const documents = extractDocumentsFromMessage(message);
-        const snapshot = buildPersistenceSnapshot(normalizedContent, documents);
-        return { message, content: normalizedContent, documents, snapshot };
+        const toolInvocations = message.toolInvocations?.map((inv): StoredToolInvocation => ({
+          state: inv.state,
+          toolCallId: inv.toolCallId,
+          toolName: inv.toolName,
+          args: inv.args,
+          result: inv.result,
+        }));
+        const clonedParts = message.parts ? cloneParts(message.parts) : undefined;
+        
+        const snapshot = buildPersistenceSnapshot({
+          content: normalizedContent,
+          documents,
+          toolInvocations: toolInvocations ?? [],
+          parts: clonedParts,
+        });
+        return { message, content: normalizedContent, documents, toolInvocations, parts: clonedParts, snapshot };
       })
-      .filter(({ content, documents }) => content.length > 0 || documents.length > 0)
+      .filter(({ content, documents, toolInvocations, parts }) => {
+        const hasTools = toolInvocations && toolInvocations.length > 0;
+        const hasParts = parts && parts.length > 0;
+        return content.length > 0 || documents.length > 0 || hasTools || hasParts;
+      })
       .filter(({ message, snapshot }) => persistedMessageSnapshots.current.get(message.id) !== snapshot);
 
     if (!pendingSaves.length) {
@@ -346,13 +362,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     await ensureConversationPersisted();
     let titleUpdated = false;
 
-    for (const { message, content, documents, snapshot } of pendingSaves) {
+    for (const { message, content, documents, toolInvocations, parts, snapshot } of pendingSaves) {
       await saveMessage({
         id: message.id,
         conversationId: session.conversation.id,
         role: message.role,
         content,
         documents: documents.length ? documents.map(cloneDocument) : undefined,
+        toolInvocations,
+        parts,
         createdAt: new Date().toISOString(),
       });
       persistedMessageSnapshots.current.set(message.id, snapshot);
@@ -515,6 +533,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     setIsCanvasOpen(true);
   }, []);
 
+  const handleSelectJob = useCallback((job: Job) => {
+    setSelectedJob(job);
+    // Focus the input area if possible, or just let user type
+  }, []);
+
+  const handleRemoveJob = useCallback(() => {
+    setSelectedJob(null);
+  }, []);
+
   const workspaceStyle = useMemo<CSSProperties | undefined>(() => {
     if (isCanvasOpen) {
       return { paddingRight: "min(640px, 50vw)" };
@@ -548,14 +575,41 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     const hasText = trimmed.length > 0;
     const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
 
-    if (!hasText && currentAttachments.length === 0) {
+    if (!hasText && currentAttachments.length === 0 && !selectedJob) {
       return;
     }
 
     const parts: UIPart[] = [];
-    if (hasText) {
+    
+    // Inject job context if selected
+    if (selectedJob) {
+      // Create a structured context block that the UI can detect and hide/collapse
+      // We use a specific delimiter format that MessageList can parse
+      const jobContext = {
+        title: selectedJob.title,
+        employer: selectedJob.employer,
+        location: selectedJob.location,
+        salary: selectedJob.salary,
+        type: selectedJob.jobType,
+        postedDate: selectedJob.postedDate,
+        link: selectedJob.link,
+        description: selectedJob.description
+      };
+      
+      const contextString = `:::job-context ${JSON.stringify(jobContext)} :::`;
+      
+      // Send context as a separate part so we can render it distinctly
+      parts.push({ type: "text", text: contextString } as UIPart);
+      
+      if (hasText) {
+        parts.push({ type: "text", text: trimmed } as UIPart);
+      } else {
+        parts.push({ type: "text", text: "Tell me more about this role." } as UIPart);
+      }
+    } else if (hasText) {
       parts.push({ type: "text", text: trimmed } as UIPart);
     }
+
     for (const attachment of currentAttachments) {
       if (!attachment.url) continue;
       parts.push(
@@ -590,6 +644,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       await sendMessage(pendingRequest.message, { body: pendingRequest.body });
       lastRequestRef.current = null;
       setInput("");
+      setSelectedJob(null);
     } catch (sendError) {
       setRetryAvailable(true);
       if (sendError instanceof Error) {
@@ -745,6 +800,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           onRetry={handleRetry}
           onSuggestionClick={handleSuggestionClick}
           isLimitReached={chatDisabled}
+          onSelectJob={handleSelectJob}
         />
       </div>
 
@@ -768,6 +824,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
             isNewConversation && dailyLimitReached ? 'daily' : 
             chatLimitReached ? 'chat' : null
           }
+          selectedJob={selectedJob}
+          onRemoveJob={handleRemoveJob}
         />
       </div>
 
@@ -819,6 +877,14 @@ const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
  * Handles reconstruction of file attachments and document tool outputs.
  */
 function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
+  if (message.parts?.length) {
+    return {
+      id: message.id,
+      role: message.role,
+      parts: cloneParts(message.parts as UIPart[]),
+    } as UIMessage;
+  }
+
   const parts: UIPart[] = [];
 
   if (message.content) {
@@ -850,6 +916,21 @@ function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
           output: cloneDocument(document),
         } as UIPart
       );
+    }
+  }
+
+  if (message.toolInvocations?.length) {
+    for (const invocation of message.toolInvocations) {
+      parts.push({
+        type: "tool-invocation",
+        toolInvocation: {
+          toolCallId: invocation.toolCallId,
+          toolName: invocation.toolName,
+          args: invocation.args,
+          result: invocation.result,
+          state: invocation.state,
+        },
+      } as ToolInvocationPart);
     }
   }
 
@@ -902,6 +983,17 @@ type DocumentToolPart = UIPart & {
   output?: unknown;
 };
 
+type ToolInvocationPart = UIPart & {
+  type: "tool-invocation";
+  toolInvocation: {
+    toolCallId: string;
+    toolName: string;
+    args: unknown;
+    result?: unknown;
+    state: ToolInvocationState;
+  };
+};
+
 /**
  * Extracts a canvas document from a message part if it exists.
  * Validates that the part is a document tool output.
@@ -951,11 +1043,36 @@ function cloneDocument(document: CanvasDocument): CanvasDocument {
  * Creates a snapshot string for change detection.
  * Used to determine if a message needs to be persisted.
  */
-function buildPersistenceSnapshot(content: string, documents: CanvasDocument[]): string {
+type SnapshotInput = {
+  content: string;
+  documents: CanvasDocument[];
+  toolInvocations: StoredToolInvocation[];
+  parts?: UIPart[];
+};
+
+function buildStoredMessageSnapshot(message: StoredMessage): string {
+  return JSON.stringify({
+    content: message.content ?? "",
+    documents: message.documents ?? [],
+    toolInvocations: message.toolInvocations ?? [],
+    parts: message.parts ?? null,
+  });
+}
+
+function buildPersistenceSnapshot({ content, documents, toolInvocations, parts }: SnapshotInput): string {
   return JSON.stringify({
     content,
     documents,
+    toolInvocations,
+    parts: parts ?? null,
   });
+}
+
+function cloneParts(parts: UIPart[]): UIPart[] {
+  if (typeof structuredClone === "function") {
+    return structuredClone(parts);
+  }
+  return JSON.parse(JSON.stringify(parts));
 }
 
 /**

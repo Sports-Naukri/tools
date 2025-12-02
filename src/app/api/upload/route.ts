@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { uploadToBlob } from "@/lib/blob";
+import { uploadToBlob, BlobConfigError } from "@/lib/blob";
 import {
   ALLOWED_ATTACHMENT_TYPES,
   MAX_ATTACHMENT_FILE_SIZE,
@@ -9,6 +9,22 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  const uploadsDisabled = process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
+  if (uploadsDisabled) {
+    return NextResponse.json(
+      { error: "File uploads are disabled in this environment", code: "uploads_disabled" },
+      { status: 503 }
+    );
+  }
+
+  if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
+    console.error("[/api/upload] Missing BLOB_READ_WRITE_TOKEN; reject request");
+    return NextResponse.json(
+      { error: "File uploads are not configured", code: "blob_token_missing" },
+      { status: 503 }
+    );
+  }
+
   const formData = await req.formData();
   const file = formData.get("file");
 
@@ -45,9 +61,27 @@ export async function POST(req: Request) {
       url: blob.url,
     });
   } catch (error) {
-    if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const basePayload = {
+      error: "Upload failed",
+      code: "upload_failed",
+    };
+
+    if (error instanceof BlobConfigError) {
+      return NextResponse.json(
+        { error: error.message, code: "blob_token_missing" },
+        { status: 503 }
+      );
     }
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+
+    if (error instanceof Error) {
+      console.error("[/api/upload] Upload failed", {
+        message: error.message,
+        stack: error.stack,
+      });
+      return NextResponse.json({ ...basePayload, error: error.message }, { status: 500 });
+    }
+
+    console.error("[/api/upload] Unknown error", error);
+    return NextResponse.json(basePayload, { status: 500 });
   }
 }

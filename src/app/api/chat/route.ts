@@ -202,6 +202,8 @@ function attachUploadsToMessages(
       name: attachment.name,
       mimeType: attachment.type,
       mediaType: attachment.type,
+      size: attachment.size,
+      attachmentId: attachment.id,
     } as UIPart);
   }
 

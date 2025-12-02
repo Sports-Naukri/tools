@@ -7,21 +7,30 @@ export type BlobUploadParams = {
   access?: "public" | "private";
 };
 
+export class BlobConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BlobConfigError";
+  }
+}
+
 export async function uploadToBlob({
   fileName,
   contentType,
   data,
   access = "public",
 }: BlobUploadParams) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error("BLOB_READ_WRITE_TOKEN is not configured");
+  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+  if (!token) {
+    console.error("[blob] Missing BLOB_READ_WRITE_TOKEN; skipping upload");
+    throw new BlobConfigError("BLOB_READ_WRITE_TOKEN is not configured");
   }
 
   const blob = await put(fileName, data, {
     contentType,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     access: access as any,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
+    token,
   });
 
   return {

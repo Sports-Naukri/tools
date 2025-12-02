@@ -98,7 +98,7 @@ export async function POST(req: Request) {
             return document;
           },
         }),
-        [JOB_SEARCH_TOOL_NAME]: tool<JobSearchInput>({
+        [JOB_SEARCH_TOOL_NAME]: tool<JobSearchInput, JobResponse>({
           description: "Search for sports-related jobs, internships, and career opportunities on SportsNaukri.com.",
           inputSchema: jobSearchSchema,
           async execute(input) {

@@ -2,6 +2,7 @@ import Dexie, { type Table } from "dexie";
 import type { UIMessage } from "@ai-sdk/react";
 
 import type { CanvasDocument } from "@/lib/canvas/documents";
+import type { UsageSnapshot } from "@/lib/chat/types";
 
 export type StoredAttachment = {
   id: string;
@@ -44,9 +45,16 @@ export type StoredConversation = {
   isArchived?: boolean;
 };
 
+export type StoredUsageSnapshot = {
+  conversationId: string;
+  snapshot: UsageSnapshot;
+  updatedAt: string;
+};
+
 class ChatDatabase extends Dexie {
   conversations!: Table<StoredConversation, string>;
   messages!: Table<StoredMessage, string>;
+  usageSnapshots!: Table<StoredUsageSnapshot, string>;
 
   constructor() {
     super("sportsnaukri-chat");
@@ -54,6 +62,11 @@ class ChatDatabase extends Dexie {
     this.version(1).stores({
       conversations: "&id, createdAt, updatedAt",
       messages: "&id, conversationId, createdAt",
+    });
+    this.version(2).stores({
+      conversations: "&id, createdAt, updatedAt",
+      messages: "&id, conversationId, createdAt",
+      usageSnapshots: "&conversationId, updatedAt",
     });
   }
 }
@@ -140,9 +153,10 @@ export async function getMessages(conversationId: string) {
 }
 
 export async function deleteConversation(conversationId: string) {
-  await chatDb.transaction("rw", chatDb.messages, chatDb.conversations, async () => {
+  await chatDb.transaction("rw", chatDb.messages, chatDb.conversations, chatDb.usageSnapshots, async () => {
     await chatDb.messages.where({ conversationId }).delete();
     await chatDb.conversations.delete(conversationId);
+    await chatDb.usageSnapshots.delete(conversationId);
   });
 }
 
@@ -150,4 +164,21 @@ export async function archiveConversation(conversationId: string) {
   const existing = await chatDb.conversations.get(conversationId);
   if (!existing) return;
   await chatDb.conversations.put({ ...existing, isArchived: true });
+}
+
+export async function saveUsageSnapshot(conversationId: string, snapshot: UsageSnapshot) {
+  await chatDb.usageSnapshots.put({
+    conversationId,
+    snapshot,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function getStoredUsageSnapshot(conversationId: string) {
+  const record = await chatDb.usageSnapshots.get(conversationId);
+  return record?.snapshot ?? null;
+}
+
+export async function clearUsageSnapshots() {
+  await chatDb.usageSnapshots.clear();
 }

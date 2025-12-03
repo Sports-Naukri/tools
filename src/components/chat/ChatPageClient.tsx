@@ -23,8 +23,10 @@ import {
   getConversation,
   getLatestConversation,
   getMessages,
+  getStoredUsageSnapshot,
   listConversations,
   saveMessage,
+  saveUsageSnapshot,
   updateConversationMeta,
   type StoredAttachment,
   type StoredConversation,
@@ -75,12 +77,24 @@ export function ChatPageClient() {
     }
     const data = (await res.json()) as UsageSnapshot;
     console.log("[ChatPageClient] Loaded usage:", data);
+    if (conversationId) {
+      await saveUsageSnapshot(conversationId, data);
+    }
     return data;
   }, []);
 
   /**
    * Bootstraps the chat session by loading the latest conversation or creating a new one.
    */
+  const updateUsageForConversation = useCallback((conversationId: string, usage: UsageSnapshot) => {
+    setSession((prev) => {
+      if (!prev || prev.conversation.id !== conversationId) {
+        return prev;
+      }
+      return { ...prev, usage };
+    });
+  }, []);
+
   const bootstrap = useCallback(async () => {
     setIsBootstrapping(true);
     const latest = await getLatestConversation();
@@ -91,11 +105,21 @@ export function ChatPageClient() {
         persist: false,
       }));
     const messages = await getMessages(conversation.id);
-    const usage = await loadUsage(conversation.id);
-    setSession({ conversation, messages, usage });
+    const cachedUsage = await getStoredUsageSnapshot(conversation.id);
+
+    if (!cachedUsage) {
+      const usage = await loadUsage(conversation.id);
+      setSession({ conversation, messages, usage });
+    } else {
+      setSession({ conversation, messages, usage: cachedUsage });
+      void loadUsage(conversation.id)
+        .then((fresh) => updateUsageForConversation(conversation.id, fresh))
+        .catch((err) => console.error("[ChatPageClient] Failed to refresh usage", err));
+    }
+
     await refreshHistory();
     setIsBootstrapping(false);
-  }, [loadUsage, refreshHistory]);
+  }, [loadUsage, refreshHistory, updateUsageForConversation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,10 +144,19 @@ export function ChatPageClient() {
       const conversation = await getConversation(conversationId);
       if (!conversation) return;
       const messages = await getMessages(conversationId);
-      const usage = await loadUsage(conversationId);
-      setSession({ conversation, messages, usage });
+      const cachedUsage = await getStoredUsageSnapshot(conversationId);
+
+      if (!cachedUsage) {
+        const usage = await loadUsage(conversationId);
+        setSession({ conversation, messages, usage });
+      } else {
+        setSession({ conversation, messages, usage: cachedUsage });
+        void loadUsage(conversationId)
+          .then((fresh) => updateUsageForConversation(conversationId, fresh))
+          .catch((err) => console.error("[ChatPageClient] Failed to refresh usage", err));
+      }
     },
-    [loadUsage, session?.conversation.id]
+    [loadUsage, session?.conversation.id, updateUsageForConversation]
   );
 
   const startBlankConversation = useCallback(
@@ -168,13 +201,21 @@ export function ChatPageClient() {
       if (conversations && conversations.length > 0) {
         const nextConversation = conversations[0];
         const messages = await getMessages(nextConversation.id);
-        const usage = await loadUsage(nextConversation.id);
-        setSession({ conversation: nextConversation, messages, usage });
+        const cachedUsage = await getStoredUsageSnapshot(nextConversation.id);
+        if (!cachedUsage) {
+          const usage = await loadUsage(nextConversation.id);
+          setSession({ conversation: nextConversation, messages, usage });
+        } else {
+          setSession({ conversation: nextConversation, messages, usage: cachedUsage });
+          void loadUsage(nextConversation.id)
+            .then((fresh) => updateUsageForConversation(nextConversation.id, fresh))
+            .catch((err) => console.error("[ChatPageClient] Failed to refresh usage", err));
+        }
       } else {
         await startBlankConversation(DEFAULT_CHAT_MODEL_ID);
       }
     },
-    [loadUsage, refreshHistory, session?.conversation.id, startBlankConversation]
+    [loadUsage, refreshHistory, session?.conversation.id, startBlankConversation, updateUsageForConversation]
   );
 
   if (isBootstrapping || !session) {

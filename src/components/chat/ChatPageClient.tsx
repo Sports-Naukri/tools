@@ -264,6 +264,11 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   // True when the last request failed and the user can retry it inline.
   const [retryAvailable, setRetryAvailable] = useState(false);
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
+
+  // Keep the "is new conversation" flag in sync when the active conversation changes so rate limits stay accurate.
+  useEffect(() => {
+    hasStartedRef.current = session.conversation.messageCount > 0;
+  }, [session.conversation.id, session.conversation.messageCount]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   // Track persisted snapshots to avoid unnecessary writes to storage

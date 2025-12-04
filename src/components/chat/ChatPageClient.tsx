@@ -16,7 +16,7 @@ import {
   MAX_ATTACHMENT_FILE_SIZE,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@/lib/chat/attachments";
-import type { AttachmentPreview, UsageSnapshot } from "@/lib/chat/types";
+import type { AttachmentPreview, ChatSuggestion, UsageSnapshot } from "@/lib/chat/types";
 import {
   createConversation,
   deleteConversation,
@@ -298,6 +298,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const [uploadsDisabledMessage, setUploadsDisabledMessage] = useState<string | null>(
     ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null
   );
+  const [suggestionsByMessage, setSuggestionsByMessage] = useState<Record<string, ChatSuggestion[]>>({});
   const attachmentFilesRef = useRef<Map<string, File>>(new Map());
   const hasUploadingAttachments = attachments.some((attachment) => attachment.status === "uploading");
   const hasErroredAttachments = attachments.some((attachment) => attachment.status === "error");
@@ -565,8 +566,54 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       const usage = await loadUsage(session.conversation.id);
       onUsageChange(usage);
       await handleFinish(message);
+      if (message) {
+        const snapshot = messagesRef.current;
+        const prev = snapshot.length >= 2 ? snapshot[snapshot.length - 2] : undefined;
+        void fetchSuggestions(message, prev);
+      }
     },
   });
+  const fetchSuggestions = useCallback(
+    async (assistantMessage: ToolAwareMessage, previousMessage?: ToolAwareMessage) => {
+      if (!assistantMessage || assistantMessage.role !== "assistant") {
+        return;
+      }
+      const assistantText = getTextContent(assistantMessage);
+      if (!assistantText.trim()) {
+        return;
+      }
+      const lastUserMessage =
+        previousMessage && previousMessage.role === "user"
+          ? previousMessage
+          : findLastUserMessage(messagesRef.current);
+      const body = {
+        conversationId: session.conversation.id,
+        messageId: assistantMessage.id,
+        lastUserText: lastUserMessage ? getTextContent(lastUserMessage) : undefined,
+        assistantText,
+        modelId,
+      };
+      try {
+        const res = await fetch("/api/chat/suggestions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          return;
+        }
+        const data = (await res.json()) as { suggestions?: ChatSuggestion[] };
+        if (!data.suggestions || data.suggestions.length === 0) {
+          return;
+        }
+        setSuggestionsByMessage((prev) => ({ ...prev, [assistantMessage.id]: data.suggestions! }));
+      } catch (err) {
+        console.warn("[ChatWorkspace] suggestion fetch failed", err);
+      }
+    },
+    [modelId, session.conversation.id]
+  );
+
 
   useEffect(() => {
     messagesRef.current = messages as ToolAwareMessage[];
@@ -996,6 +1043,14 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           documentLookup={documentLookup}
           showRetry={retryAvailable}
           onRetry={handleRetry}
+          suggestionsByMessage={suggestionsByMessage}
+          onSuggestionSelect={(messageId) =>
+            setSuggestionsByMessage((prev) => {
+              const next = { ...prev };
+              delete next[messageId];
+              return next;
+            })
+          }
           onSuggestionClick={handleSuggestionClick}
           isLimitReached={chatDisabled}
           onSelectJob={handleSelectJob}
@@ -1350,6 +1405,16 @@ function ensureDocumentSummaryInMessage<T extends UIMessage>(message: T): T {
   const filteredParts = parts.filter((part) => !TEXT_PART_TYPES.has(part.type));
   const nextParts = [...filteredParts, { type: "text", text: summary } as UIPart];
   return { ...message, parts: nextParts } as T;
+}
+
+function findLastUserMessage(messages: ToolAwareMessage[]): ToolAwareMessage | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const candidate = messages[i];
+    if (candidate?.role === "user") {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 /**

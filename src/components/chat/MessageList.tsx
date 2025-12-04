@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import clsx from "clsx";
 
 import type { ToolAwareMessage } from "@/lib/chat/tooling";
+import type { ChatSuggestion } from "@/lib/chat/types";
 import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
 import { JOB_SEARCH_TOOL_NAME } from "@/lib/jobs/tools";
 import { JobList } from "./JobCard";
@@ -23,6 +24,8 @@ export type MessageListProps = {
   onSuggestionClick?: (text: string) => void;
   isLimitReached?: boolean;
   onSelectJob?: (job: Job) => void;
+  suggestionsByMessage?: Record<string, ChatSuggestion[]>;
+  onSuggestionSelect?: (messageId: string) => void;
 };
 
 const STARTER_QUESTIONS = [
@@ -45,7 +48,9 @@ export function MessageList({
   onRetry,
   onSuggestionClick,
   isLimitReached,
-  onSelectJob
+  onSelectJob,
+  suggestionsByMessage = {},
+  onSuggestionSelect,
 }: MessageListProps) {
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
@@ -89,6 +94,8 @@ export function MessageList({
         const isAssistantStreaming =
           isStreaming && index === messages.length - 1 && message.role === "assistant";
 
+        const suggestions = suggestionsByMessage[message.id] ?? [];
+
         return (
           <div key={message.id} className="flex flex-col gap-2">
             <MessageBubble
@@ -98,6 +105,16 @@ export function MessageList({
               isStreamingAssistant={isAssistantStreaming}
               onSelectJob={onSelectJob}
             />
+            {!isAssistantStreaming && suggestions.length > 0 && (
+              <SuggestionRow
+                suggestions={suggestions}
+                onSuggestionClick={(text) => {
+                  onSuggestionClick?.(text);
+                  onSuggestionSelect?.(message.id);
+                }}
+                onDismiss={() => onSuggestionSelect?.(message.id)}
+              />
+            )}
             {showRetry && index === messages.length - 1 && (
               <div className="flex justify-end px-4 items-center gap-2">
                 <span className="text-xs text-red-500">Failed to send</span>
@@ -194,6 +211,37 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
           <User className="h-5 w-5" />
         </div>
       )}
+    </div>
+  );
+}
+
+type SuggestionRowProps = {
+  suggestions: ChatSuggestion[];
+  onSuggestionClick: (text: string) => void;
+  onDismiss?: () => void;
+};
+
+function SuggestionRow({ suggestions, onSuggestionClick, onDismiss }: SuggestionRowProps) {
+  return (
+    <div className="flex flex-wrap gap-2 pl-12 animate-in fade-in duration-300">
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion.id}
+          type="button"
+          onClick={() => onSuggestionClick(suggestion.text)}
+          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:text-[#006dff] hover:-translate-y-0.5 transition"
+        >
+          {suggestion.text}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="rounded-full border border-transparent px-2 text-[11px] text-slate-400 hover:text-slate-600"
+        aria-label="Dismiss suggestions"
+      >
+        Dismiss
+      </button>
     </div>
   );
 }

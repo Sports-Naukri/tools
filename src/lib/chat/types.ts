@@ -43,3 +43,12 @@ export type UsageSnapshot = {
     remaining: number;
   };
 };
+
+export type ChatSuggestion = {
+  id: string;
+  text: string;
+};
+
+export type SuggestionResponse = {
+  suggestions: ChatSuggestion[];
+};

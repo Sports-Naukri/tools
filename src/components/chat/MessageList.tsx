@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, FileText, Loader2, User, RefreshCw, Briefcase } from "lucide-react";
+import { Bot, FileText, Loader2, User, RefreshCw, Briefcase, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
@@ -173,6 +173,12 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
       >
         {message.parts.map((part, index) => {
           if (part.type === 'text') {
+            if (part.text.startsWith(":::resume-meta")) {
+              return null;
+            }
+            if (part.text.startsWith(":::resume-context")) {
+              return <ResumeContextChip key={index} text={part.text} />;
+            }
             if (part.text.startsWith(":::job-context")) {
               return <JobContextChip key={index} text={part.text} />;
             }
@@ -292,6 +298,60 @@ function extractJobContext(text: string) {
     const title = data.title || "Job";
     const employer = data.employer || "Company";
     return { title, employer };
+  } catch {
+    return null;
+  }
+}
+
+function ResumeContextChip({ text }: { text: string }) {
+  const data = useMemo(() => extractResumeContext(text), [text]);
+  const [isOpen, setIsOpen] = useState(false);
+  if (!data) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 px-3 py-2 text-xs text-slate-600 shadow-sm">
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="inline-flex items-center gap-2 font-semibold text-slate-700"
+      >
+        <FileText className="h-3.5 w-3.5 text-[#006dff]" />
+        <span>Resume context • {data.fileName}</span>
+        {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {isOpen && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[11px] text-slate-500">
+            {data.wordCount} words · {data.readingTimeMinutes} min read
+          </p>
+          {data.summary && (
+            <p className="text-[11px] text-slate-600">
+              <span className="font-semibold text-slate-700">Summary:</span> {data.summary}
+            </p>
+          )}
+          {Array.isArray(data.strengths) && data.strengths.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {data.strengths.map((skill: string) => (
+                <span key={skill} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                  {skill}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50 p-3 text-[11px] text-slate-600 whitespace-pre-wrap">
+            {data.fullText || "Full resume text unavailable."}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function extractResumeContext(text: string) {
+  const match = text.match(/:::resume-context\s+([\s\S]+?)\s+:::/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
   } catch {
     return null;
   }

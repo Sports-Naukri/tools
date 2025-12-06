@@ -32,7 +32,7 @@ export const CHAT_MODELS: ChatModel[] = [
     id: "advanced",
     vendor: "openai",
     name: "Advanced",
-    description: "Coming soon: Deeper Reasoning",
+    description: "Coming soon: eeper reasoning",
     providerModelId: "gpt-4o",
     isEnabled: false,
   },

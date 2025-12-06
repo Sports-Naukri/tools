@@ -156,7 +156,10 @@ export function ChatComposer({
             {attachments.map((att) => {
               const isUploading = att.status === "uploading";
               const isError = att.status === "error";
-              const statusText = isUploading
+              const isLocalOnly = Boolean(att.isLocalOnly);
+              const statusText = isLocalOnly
+                ? "Stored locally (resume)"
+                : isUploading
                 ? "Uploading…"
                 : isError
                 ? att.error ?? "Upload failed"
@@ -190,7 +193,7 @@ export function ChatComposer({
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {isError && (
+                    {isError && !isLocalOnly && (
                       <button
                         type="button"
                           onClick={() => onRetryAttachment?.(att.id)}

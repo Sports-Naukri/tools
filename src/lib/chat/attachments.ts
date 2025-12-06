@@ -9,6 +9,9 @@ export const ALLOWED_ATTACHMENT_TYPES = [
   "image/jpeg",
   "image/webp",
   "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
 ];
 
 export type AttachmentPayload = {

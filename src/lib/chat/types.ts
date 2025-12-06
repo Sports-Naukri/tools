@@ -6,6 +6,7 @@ export type AttachmentPreview = {
   url?: string;
   status: "uploading" | "ready" | "error";
   error?: string;
+  isLocalOnly?: boolean;
 };
 
 export type ChatMessage = {

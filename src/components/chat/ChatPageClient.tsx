@@ -9,6 +9,7 @@ import { CanvasPanel } from "@/components/canvas/CanvasPanel";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
+import { ResumeSkillDialog, type ResumeSkillDialogProps } from "@/components/chat/resume/ResumeSkillDialog";
 import { DEFAULT_CHAT_MODEL_ID, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
 import { logAttachmentFailure } from "@/lib/analytics/attachments";
 import {
@@ -36,11 +37,37 @@ import {
 import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
 import type { ToolAwareMessage, ToolInvocationState } from "@/lib/chat/tooling";
 import type { Job } from "@/lib/jobs/types";
+import { JOB_SEARCH_TOOL_NAME } from "@/lib/jobs/tools";
+import { extractSkillsFromResume } from "@/lib/skills/extract";
+import { isSupportedResumeFile, parseResumeFile } from "@/lib/resume/parser";
 
 const ATTACHMENTS_DISABLED = process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
 const DEFAULT_UPLOADS_DISABLED_MESSAGE = "File uploads are disabled in this environment.";
 // Allows hiding post-response suggestion pills without breaking starter prompts.
 const SUGGESTIONS_DISABLED = process.env.NEXT_PUBLIC_CHAT_SUGGESTIONS_DISABLED === "true";
+const RESUME_SUMMARY_WORD_LIMIT = 900;
+const RESUME_HARD_WORD_LIMIT = 1400;
+const RESUME_PROMPT_SUMMARY_WORD_LIMIT = 90;
+const RESUME_PRIORITY_HEADERS = [
+  "experience",
+  "professional experience",
+  "work experience",
+  "projects",
+  "internships",
+  "skills",
+  "education",
+  "achievements",
+  "certifications",
+  "summary",
+];
+const GENERAL_JOB_KEYWORDS = [
+  "sports operations",
+  "sports partnerships",
+  "event management",
+  "sports marketing",
+  "sports analytics",
+  "athlete management",
+];
 
 type SessionState = {
   conversation: StoredConversation;
@@ -287,6 +314,13 @@ type PendingRequest = {
   };
 };
 
+type ResumeFlowDraft = {
+  attachmentId: string;
+  resumeText: string;
+  wasTrimmed: boolean;
+  limitNotice?: string;
+} & NonNullable<ResumeSkillDialogProps["draft"]>;
+
 /**
  * Component responsible for the active chat interface.
  * Manages the message list, composer, and canvas panel.
@@ -301,6 +335,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null
   );
   const [suggestionsByMessage, setSuggestionsByMessage] = useState<Record<string, ChatSuggestion[]>>({});
+  const [resumeDraft, setResumeDraft] = useState<ResumeFlowDraft | null>(null);
+  const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
+  const [isResumeSubmitting, setIsResumeSubmitting] = useState(false);
   useEffect(() => {
     if (!SUGGESTIONS_DISABLED) {
       return;
@@ -311,6 +348,22 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const hasUploadingAttachments = attachments.some((attachment) => attachment.status === "uploading");
   const hasErroredAttachments = attachments.some((attachment) => attachment.status === "error");
   const [input, setInput] = useState("");
+  useEffect(() => {
+    if (!resumeDraft) {
+      return;
+    }
+    const stillAttached = attachments.some((attachment) => attachment.id === resumeDraft.attachmentId);
+    if (!stillAttached) {
+      setIsResumeSubmitting(false);
+      setIsResumeDialogOpen(false);
+      setResumeDraft(null);
+    }
+  }, [attachments, resumeDraft]);
+  useEffect(() => {
+    setIsResumeSubmitting(false);
+    setIsResumeDialogOpen(false);
+    setResumeDraft(null);
+  }, [session.conversation.id]);
   // True when the last request failed and the user can retry it inline.
   const [retryAvailable, setRetryAvailable] = useState(false);
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
@@ -332,7 +385,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   );
 
   const readyAttachments = attachments.filter(
-    (attachment) => attachment.status === "ready" && typeof attachment.url === "string"
+    (attachment) => attachment.status === "ready" && typeof attachment.url === "string" && !attachment.isLocalOnly
   );
 
   const uploadAttachment = useCallback(
@@ -790,6 +843,64 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     setSelectedJob(null);
   }, []);
 
+  const processResumeAttachment = useCallback(
+    async (file: File, attachmentId: string) => {
+      try {
+        const parsed = await parseResumeFile(file);
+        if (parsed.wordCount > RESUME_HARD_WORD_LIMIT) {
+          const limitMessage = "Please upload a resume under ~2 pages so we can map it in chat.";
+          setComposerError(limitMessage);
+          setAttachments((prev) =>
+            prev.map((attachment) =>
+              attachment.id === attachmentId
+                ? { ...attachment, status: "error", error: limitMessage }
+                : attachment
+            )
+          );
+          return;
+        }
+
+        const sanitizedText = summarizeResumeContent(parsed.text, RESUME_SUMMARY_WORD_LIMIT);
+        const sanitizedWordCount = countWords(sanitizedText);
+        const wasTrimmed = sanitizedWordCount < parsed.wordCount;
+        const limitNotice = wasTrimmed
+          ? "Trimmed to the most relevant sections so the assistant can read it quickly."
+          : undefined;
+        const skills = extractSkillsFromResume(parsed.text, { limit: 12 });
+
+        setAttachments((prev) =>
+          prev.map((attachment) =>
+            attachment.id === attachmentId ? { ...attachment, status: "ready", error: undefined } : attachment
+          )
+        );
+
+        setResumeDraft({
+          attachmentId,
+          fileName: file.name,
+          wordCount: sanitizedWordCount,
+          readingTimeMinutes: sanitizedWordCount === 0 ? 0 : Math.max(1, Math.round(sanitizedWordCount / 200)),
+          skills,
+          textPreview: sanitizedText.slice(0, 900),
+          limitNotice,
+          resumeText: sanitizedText,
+          wasTrimmed,
+        });
+        setIsResumeDialogOpen(true);
+      } catch (err) {
+        console.error("[ChatWorkspace] Failed to process resume", err);
+        const fallbackMessage =
+          err instanceof Error ? err.message : "Couldn't process the resume. You can still send it manually.";
+        setComposerError(fallbackMessage);
+        setAttachments((prev) =>
+          prev.map((attachment) =>
+            attachment.id === attachmentId ? { ...attachment, status: "error", error: fallbackMessage } : attachment
+          )
+        );
+      }
+    },
+    [setComposerError, setAttachments]
+  );
+
   const workspaceStyle = useMemo<CSSProperties | undefined>(() => {
     if (isCanvasOpen) {
       return { paddingRight: "min(640px, 50vw)" };
@@ -797,122 +908,156 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     return undefined;
   }, [isCanvasOpen]);
 
+  const resumeDialogDraft = useMemo<ResumeSkillDialogProps["draft"]>(() => {
+    if (!resumeDraft) {
+      return null;
+    }
+    return {
+      fileName: resumeDraft.fileName,
+      wordCount: resumeDraft.wordCount,
+      readingTimeMinutes: resumeDraft.readingTimeMinutes,
+      skills: resumeDraft.skills,
+      textPreview: resumeDraft.textPreview,
+      limitNotice: resumeDraft.limitNotice,
+    };
+  }, [resumeDraft]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
   };
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-
-    if (retryAvailable) {
-      const newMessages = [...messages];
-      // Remove failed assistant message if present
-      if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
-        newMessages.pop();
+  const submitMessage = useCallback(
+    async (textOverride?: string, extraParts: UIPart[] = []) => {
+      if (retryAvailable) {
+        const newMessages = [...messages];
+        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === "assistant") {
+          newMessages.pop();
+        }
+        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === "user") {
+          newMessages.pop();
+        }
+        setMessages(newMessages);
+        setRetryAvailable(false);
+        lastRequestRef.current = null;
       }
-      // Remove failed user message if present
-      if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'user') {
-        newMessages.pop();
+
+      const rawText = textOverride ?? input;
+      const trimmed = rawText.trim();
+      const hasText = trimmed.length > 0;
+      const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
+
+      if (hasUploadingAttachments) {
+        const message = "Please wait for uploads to finish before sending.";
+        setComposerError(message);
+        throw new Error(message);
       }
-      setMessages(newMessages);
-      setRetryAvailable(false);
-      lastRequestRef.current = null;
-    }
 
-    const trimmed = input.trim();
-    const hasText = trimmed.length > 0;
-    const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
+      if (hasErroredAttachments) {
+        const message = "Remove or retry attachments that failed to upload.";
+        setComposerError(message);
+        throw new Error(message);
+      }
 
-    if (hasUploadingAttachments) {
-      setComposerError("Please wait for uploads to finish before sending.");
-      return;
-    }
+      if (!hasText && currentAttachments.length === 0 && !selectedJob) {
+        return;
+      }
 
-    if (hasErroredAttachments) {
-      setComposerError("Remove or retry attachments that failed to upload.");
-      return;
-    }
+      const parts: UIPart[] = extraParts.length ? [...extraParts] : [];
 
-    if (!hasText && currentAttachments.length === 0 && !selectedJob) {
-      return;
-    }
+      if (selectedJob) {
+        const jobContext = {
+          title: selectedJob.title,
+          employer: selectedJob.employer,
+          location: selectedJob.location,
+          salary: selectedJob.salary,
+          type: selectedJob.jobType,
+          postedDate: selectedJob.postedDate,
+          link: selectedJob.link,
+          description: selectedJob.description,
+        };
 
-    const parts: UIPart[] = [];
-    
-    // Inject job context if selected
-    if (selectedJob) {
-      // Create a structured context block that the UI can detect and hide/collapse
-      // We use a specific delimiter format that MessageList can parse
-      const jobContext = {
-        title: selectedJob.title,
-        employer: selectedJob.employer,
-        location: selectedJob.location,
-        salary: selectedJob.salary,
-        type: selectedJob.jobType,
-        postedDate: selectedJob.postedDate,
-        link: selectedJob.link,
-        description: selectedJob.description
-      };
-      
-      const contextString = `:::job-context ${JSON.stringify(jobContext)} :::`;
-      
-      // Send context as a separate part so we can render it distinctly
-      parts.push({ type: "text", text: contextString } as UIPart);
-      
-      if (hasText) {
+        const contextString = `:::job-context ${JSON.stringify(jobContext)} :::`;
+        parts.push({ type: "text", text: contextString } as UIPart);
+
+        if (hasText) {
+          parts.push({ type: "text", text: trimmed } as UIPart);
+        } else {
+          parts.push({ type: "text", text: "Tell me more about this role." } as UIPart);
+        }
+      } else if (hasText) {
         parts.push({ type: "text", text: trimmed } as UIPart);
-      } else {
-        parts.push({ type: "text", text: "Tell me more about this role." } as UIPart);
       }
-    } else if (hasText) {
-      parts.push({ type: "text", text: trimmed } as UIPart);
-    }
 
-    for (const attachment of currentAttachments) {
-      if (!attachment.url) continue;
-      parts.push(
-        {
-          type: "file",
-          url: attachment.url,
-          name: attachment.name,
-          mimeType: attachment.type,
-          mediaType: attachment.type,
-          size: attachment.size,
-          attachmentId: attachment.id,
-        } as UIPart
-      );
-    }
-
-    const pendingRequest: PendingRequest = {
-      message: {
-        role: "user",
-        parts,
-      } as ToolAwareMessage,
-      body: {
-        conversationId: session.conversation.id,
-        modelId,
-        isSearchEnabled,
-        attachments: currentAttachments,
-        isNewConversation: !hasStartedRef.current,
-      },
-    };
-
-    lastRequestRef.current = pendingRequest;
-    setRetryAvailable(false);
-
-    try {
-      await sendMessage(pendingRequest.message, { body: pendingRequest.body });
-      lastRequestRef.current = null;
-      setInput("");
-      setSelectedJob(null);
-    } catch (sendError) {
-      setRetryAvailable(true);
-      if (sendError instanceof Error) {
-        setComposerError(sendError.message);
+      for (const attachment of currentAttachments) {
+        if (!attachment.url) continue;
+        parts.push(
+          {
+            type: "file",
+            url: attachment.url,
+            name: attachment.name,
+            mimeType: attachment.type,
+            mediaType: attachment.type,
+            size: attachment.size,
+            attachmentId: attachment.id,
+          } as UIPart
+        );
       }
-      return;
-    }
-  };
+
+      const pendingRequest: PendingRequest = {
+        message: {
+          role: "user",
+          parts,
+        } as ToolAwareMessage,
+        body: {
+          conversationId: session.conversation.id,
+          modelId,
+          isSearchEnabled,
+          attachments: currentAttachments,
+          isNewConversation: !hasStartedRef.current,
+        },
+      };
+
+      lastRequestRef.current = pendingRequest;
+      setRetryAvailable(false);
+
+      try {
+        await sendMessage(pendingRequest.message, { body: pendingRequest.body });
+        lastRequestRef.current = null;
+        setInput("");
+        setSelectedJob(null);
+      } catch (sendError) {
+        setRetryAvailable(true);
+        if (sendError instanceof Error) {
+          setComposerError(sendError.message);
+        }
+        throw sendError;
+      }
+    },
+    [
+      retryAvailable,
+      messages,
+      setMessages,
+      input,
+      readyAttachments,
+      hasUploadingAttachments,
+      hasErroredAttachments,
+      selectedJob,
+      session.conversation.id,
+      modelId,
+      isSearchEnabled,
+      sendMessage,
+      setSelectedJob,
+      setComposerError,
+    ]
+  );
+
+  const handleSubmit = useCallback(
+    (e?: React.FormEvent) => {
+      e?.preventDefault();
+      void submitMessage();
+    },
+    [submitMessage]
+  );
 
   // Replays the last failed request without forcing the user to retype it.
   const handleRetry = useCallback(async () => {
@@ -965,6 +1110,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       }
 
       for (const file of selectedFiles) {
+        const isResumeFile = isSupportedResumeFile(file);
+
         if (file.size > MAX_ATTACHMENT_FILE_SIZE) {
           errorMessage = `"${file.name}" is larger than 5MB.`;
           logAttachmentFailure({
@@ -979,7 +1126,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           continue;
         }
 
-        if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
+        if (!isResumeFile && !ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
           errorMessage = `"${file.name}" type is not supported.`;
           logAttachmentFailure({
             attachmentId: file.name,
@@ -999,16 +1146,23 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           name: file.name,
           size: file.size,
           type: file.type,
-          status: "uploading",
+          status: isResumeFile ? "ready" : "uploading",
+          isLocalOnly: isResumeFile,
         };
-        attachmentFilesRef.current.set(id, file);
         setAttachments((prev) => [...prev, preview]);
+
+        if (isResumeFile) {
+          void processResumeAttachment(file, id);
+          continue;
+        }
+
+        attachmentFilesRef.current.set(id, file);
         void uploadAttachment(file, id);
       }
 
       setComposerError(errorMessage);
     },
-    [attachments.length, uploadsDisabledMessage, session.conversation.id, uploadAttachment]
+    [attachments.length, uploadsDisabledMessage, session.conversation.id, uploadAttachment, processResumeAttachment]
   );
 
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
@@ -1033,6 +1187,120 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       void uploadAttachment(file, attachmentId);
     },
     [uploadAttachment]
+  );
+
+  const handleResumeSkip = useCallback(() => {
+    if (resumeDraft) {
+      setAttachments((prev) => prev.filter((attachment) => attachment.id !== resumeDraft.attachmentId));
+    }
+    setIsResumeSubmitting(false);
+    setIsResumeDialogOpen(false);
+    setResumeDraft(null);
+  }, [resumeDraft, setAttachments]);
+
+  const handleResumeConfirm = useCallback(
+    async (skills: string[]) => {
+      if (!resumeDraft) {
+        handleResumeSkip();
+        return;
+      }
+
+      const normalizedSkills = skills.map((skill) => skill.trim()).filter(Boolean);
+      if (normalizedSkills.length === 0) {
+        setComposerError("Select at least one skill to continue.");
+        return;
+      }
+
+      if (hasUploadingAttachments) {
+        setComposerError("Please wait for your resume upload to finish.");
+        return;
+      }
+
+      if (hasErroredAttachments) {
+        setComposerError("Fix or remove failed uploads before continuing.");
+        return;
+      }
+
+      const resumeStillAttached = attachments.some((attachment) => attachment.id === resumeDraft.attachmentId);
+      if (!resumeStillAttached) {
+        setComposerError("Your resume attachment is no longer available. Reattach it to continue.");
+        return;
+      }
+
+      const userIntent = input.trim();
+      const strengths = normalizedSkills.join(", ");
+      const intro = userIntent
+        ? userIntent
+        : "Use this resume to find relevant sports-industry jobs on SportsNaukri.";
+      const resumeSummaryForPrompt = summarizeResumeContent(
+        resumeDraft.resumeText,
+        RESUME_PROMPT_SUMMARY_WORD_LIMIT
+      );
+      const topSkillsForPrompt = normalizedSkills.slice(0, 4);
+      const generalKeywords = selectGeneralKeywords(topSkillsForPrompt);
+      const preferredKeywordList = Array.from(new Set([topSkillsForPrompt[0], ...generalKeywords].filter(Boolean)));
+      const promptSections = [
+        intro,
+        resumeSummaryForPrompt ? `Resume summary: ${resumeSummaryForPrompt}` : null,
+        `Confirmed strengths: ${strengths}.`,
+        preferredKeywordList.length
+          ? `Preferred search keywords: ${preferredKeywordList.join(", " )}.`
+          : null,
+        `When you call the ${JOB_SEARCH_TOOL_NAME} tool, start with the general keywords (${generalKeywords.join(", ")}) to keep the search broad. Prioritize surfacing at least 3 distinct opportunities before drilling into any single role. If fewer than 3 roles come back, retry with the top resume strength (${topSkillsForPrompt[0] ?? "sports professional"}). Always explain why each role is still relevant even if only loosely related.`,
+      ];
+      const prompt = promptSections.filter(Boolean).join("\n\n");
+
+      const resumeContextPart: UIPart = {
+        type: "text",
+        text: `:::resume-context ${JSON.stringify({
+          attachmentId: resumeDraft.attachmentId,
+          fileName: resumeDraft.fileName,
+          wordCount: resumeDraft.wordCount,
+          readingTimeMinutes: resumeDraft.readingTimeMinutes,
+          summary: resumeDraft.textPreview,
+          fullText: resumeDraft.resumeText,
+          strengths: normalizedSkills,
+          wasTrimmed: resumeDraft.wasTrimmed,
+        })} :::`,
+      };
+      const resumeMetaPart: UIPart = {
+        type: "text",
+        text: `:::resume-meta ${JSON.stringify({
+          summary: resumeSummaryForPrompt,
+          topSkills: topSkillsForPrompt,
+          generalKeywords,
+        })} :::`,
+      };
+
+      console.info("[ResumeFlow] Prepared search payload", {
+        summaryLength: resumeSummaryForPrompt?.length ?? 0,
+        topSkills: topSkillsForPrompt,
+        generalKeywords,
+      });
+
+      setIsResumeSubmitting(true);
+      try {
+        await submitMessage(prompt, [resumeMetaPart, resumeContextPart]);
+        setIsResumeDialogOpen(false);
+        setResumeDraft(null);
+        setAttachments((prev) => prev.filter((attachment) => attachment.id !== resumeDraft.attachmentId));
+      } catch (error) {
+        console.error("[ChatWorkspace] Resume-triggered search failed", error);
+      } finally {
+        setIsResumeSubmitting(false);
+      }
+    },
+    [
+      resumeDraft,
+      attachments,
+      hasUploadingAttachments,
+      hasErroredAttachments,
+      input,
+      submitMessage,
+      handleResumeSkip,
+      setComposerError,
+      setAttachments,
+    ]
   );
 
   const isNewConversation = session.conversation.messageCount === 0;
@@ -1145,6 +1413,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         isOpen={isCanvasOpen}
         onClose={() => setIsCanvasOpen(false)}
       />
+      <ResumeSkillDialog
+        key={resumeDraft ? resumeDraft.attachmentId : "resume-skill-dialog"}
+        isOpen={isResumeDialogOpen}
+        onClose={handleResumeSkip}
+        onSkip={handleResumeSkip}
+        onConfirm={handleResumeConfirm}
+        draft={resumeDialogDraft}
+        isSubmitting={isResumeSubmitting}
+      />
     </section>
   );
 }
@@ -1179,6 +1456,95 @@ function deriveTitle(content: string) {
   const trimmed = content.trim();
   if (trimmed.length <= 50) return trimmed;
   return `${trimmed.slice(0, 47)}…`;
+}
+
+function summarizeResumeContent(text: string, wordLimit: number): string {
+  if (!text) {
+    return "";
+  }
+  const paragraphs = text
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  if (!paragraphs.length) {
+    return truncateWords(text, wordLimit);
+  }
+
+  const prioritized: string[] = [];
+  const fallback: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    const normalized = paragraph.toLowerCase();
+    const bucket = RESUME_PRIORITY_HEADERS.some((header) => normalized.startsWith(header))
+      ? prioritized
+      : fallback;
+    bucket.push(paragraph);
+  }
+
+  const summary = collectWordsFromParagraphs([...prioritized, ...fallback], wordLimit);
+  if (summary.trim().length > 0) {
+    return summary;
+  }
+  return truncateWords(text, wordLimit);
+}
+
+function collectWordsFromParagraphs(paragraphs: string[], limit: number): string {
+  const tokens: string[] = [];
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(/\s+/);
+    for (const word of words) {
+      if (!word) continue;
+      tokens.push(word);
+      if (tokens.length >= limit) {
+        return tokens.join(" ");
+      }
+    }
+  }
+  return tokens.join(" ");
+}
+
+function truncateWords(text: string, limit: number): string {
+  const normalized = text.trim();
+  if (!normalized) {
+    return "";
+  }
+  const tokens = normalized.split(/\s+/);
+  if (tokens.length <= limit) {
+    return tokens.join(" ");
+  }
+  return tokens.slice(0, limit).join(" ");
+}
+
+function countWords(value: string): number {
+  if (!value || !value.trim()) {
+    return 0;
+  }
+  return value.trim().split(/\s+/).length;
+}
+
+function selectGeneralKeywords(skills: string[], desiredCount = 2): string[] {
+  const normalizedSkills = new Set(skills.map((skill) => skill.toLowerCase()));
+  const selected: string[] = [];
+  for (const keyword of GENERAL_JOB_KEYWORDS) {
+    if (selected.length >= desiredCount) {
+      break;
+    }
+    if (!normalizedSkills.has(keyword.toLowerCase())) {
+      selected.push(keyword);
+    }
+  }
+  if (selected.length < desiredCount) {
+    for (const keyword of GENERAL_JOB_KEYWORDS) {
+      if (selected.length >= desiredCount) {
+        break;
+      }
+      if (!selected.includes(keyword)) {
+        selected.push(keyword);
+      }
+    }
+  }
+  return selected;
 }
 
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;

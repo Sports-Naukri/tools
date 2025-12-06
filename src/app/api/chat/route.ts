@@ -74,6 +74,7 @@ export async function POST(req: Request) {
     // This ensures that even if a conversation is long, we don't exceed token limits.
     const recentUiMessages = uiMessages.slice(-20);
 
+    const resumeMeta = extractLatestResumeMeta(recentUiMessages as UIMessage[]);
     const modelMessages = convertToModelMessages(recentUiMessages as UIMessage[]).filter(isSupportedModelMessage);
 
     console.log("/api/chat env", {
@@ -106,7 +107,35 @@ export async function POST(req: Request) {
           description: "Search for sports-related jobs, internships, and career opportunities on SportsNaukri.com.",
           inputSchema: jobSearchSchema,
           async execute(input) {
-            const results = await fetchJobs(input);
+            const requestId = crypto.randomUUID();
+            const resumeSkills = resumeMeta?.topSkills ?? [];
+            const resumeGeneralKeywords = resumeMeta?.generalKeywords ?? [];
+            const fallbackGeneralKeywords = resumeGeneralKeywords.length > 0
+              ? resumeGeneralKeywords
+              : deriveKeywordsFromSearch(input.search);
+            const requestedLimit = typeof input.limit === "number" ? input.limit : 10;
+            const normalizedLimit = Math.min(Math.max(requestedLimit, 5), 20);
+            const filter = {
+              ...input,
+              limit: normalizedLimit,
+              skillKeywords: resumeSkills,
+              generalKeywords: fallbackGeneralKeywords,
+              resumeSummary: resumeMeta?.summary,
+              telemetry: {
+                conversationId: payload.conversationId,
+                requestId,
+                requestedAt: new Date().toISOString(),
+              },
+            };
+            const results = await fetchJobs(filter);
+            results.meta ??= {};
+            results.meta.telemetryId = results.meta.telemetryId ?? requestId;
+            results.meta.generalKeywords = results.meta.generalKeywords?.length
+              ? results.meta.generalKeywords
+              : fallbackGeneralKeywords;
+            results.meta.searchKeywords = results.meta.searchKeywords?.length
+              ? results.meta.searchKeywords
+              : deriveKeywordsFromSearch(input.search);
             return results;
           },
         }),
@@ -168,7 +197,7 @@ export async function POST(req: Request) {
 
 const systemPrompt = `You are SportsNaukri's expert career assistant.
 Respond conversationally for standard coaching or Q&A.
-When the user asks about jobs, vacancies, or career opportunities, use the ${JOB_SEARCH_TOOL_NAME} tool to find real listings.
+When the user asks about jobs, vacancies, or career opportunities, use the ${JOB_SEARCH_TOOL_NAME} tool to find real listings and prioritize surfacing at least three distinct roles; if the endpoint yields fewer, clearly say so and suggest broader keywords or transferable strengths.
 When the user explicitly asks for a structured asset (resume, cover letter, report, essay) or when a structured document would clearly help, call the ${DOCUMENT_TOOL_NAME} tool exactly once and summarize the output in the live chat instead of pasting the whole document.
 After you finish responding (and only if you did not call ${DOCUMENT_TOOL_NAME}), call the ${FOLLOWUP_TOOL_NAME} tool exactly once with up to two targeted follow-up questions the user might ask next.
 Only output plain chat responses outside of the tool.`;
@@ -362,4 +391,56 @@ function isJobSearchToolPart(part: JobSearchToolPart): part is JobSearchToolPart
   output: JobResponse;
 } {
   return Boolean(part.type === JOB_SEARCH_PART_TYPE && part.output);
+}
+
+type ResumeMetaPayload = {
+  summary?: string;
+  topSkills?: string[];
+  generalKeywords?: string[];
+};
+
+function extractLatestResumeMeta(messages: UIMessage[]): ResumeMetaPayload | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message.parts?.length) {
+      continue;
+    }
+    for (const part of message.parts) {
+      if (part.type !== "text") {
+        continue;
+      }
+      const payload = parseTaggedJsonPayload<ResumeMetaPayload>(String((part as { text?: string }).text ?? ""), "resume-meta");
+      if (payload) {
+        return payload;
+      }
+    }
+  }
+  return null;
+}
+
+function parseTaggedJsonPayload<T = unknown>(text: string, tag: string): T | null {
+  if (!text) {
+    return null;
+  }
+  const pattern = new RegExp(`:::${tag}\\s+([\\s\\S]+?)\\s+:::`);
+  const match = text.match(pattern);
+  if (!match) {
+    return null;
+  }
+  try {
+    return JSON.parse(match[1]) as T;
+  } catch {
+    return null;
+  }
+}
+
+function deriveKeywordsFromSearch(search?: string | null): string[] {
+  if (!search) {
+    return [];
+  }
+  return search
+    .split(/[\s,]+/)
+    .map((keyword) => keyword.trim())
+    .filter(Boolean)
+    .map((keyword) => keyword.toLowerCase());
 }

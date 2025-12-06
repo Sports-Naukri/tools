@@ -15,6 +15,7 @@ export interface Job {
   description: string;
   postedDate: string | null;
   fullDescriptionUrl: string;
+  relevance?: JobRelevance;
 }
 
 export interface JobFilter {
@@ -23,6 +24,10 @@ export interface JobFilter {
   jobType?: string;
   limit?: number;
   page?: number;
+  skillKeywords?: string[];
+  generalKeywords?: string[];
+  resumeSummary?: string;
+  telemetry?: JobSearchTelemetryContext;
 }
 
 export interface JobResponse {
@@ -34,6 +39,29 @@ export interface JobResponse {
   jobs: Job[];
   message?: string;
   tips?: string[];
+  meta?: JobResponseMeta;
+}
+
+export interface JobRelevance {
+  skillMatches: string[];
+  generalMatches: string[];
+}
+
+export interface JobResponseMeta {
+  telemetryId?: string;
+  conversationId?: string;
+  broadenedSearch?: boolean;
+  lowResultCount?: number;
+  requestedCount?: number;
+  searchKeywords?: string[];
+  skillKeywords?: string[];
+  generalKeywords?: string[];
+}
+
+export interface JobSearchTelemetryContext {
+  conversationId?: string;
+  requestId: string;
+  requestedAt?: string;
 }
 
 // Raw WordPress API types (partial)

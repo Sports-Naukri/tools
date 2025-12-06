@@ -1,9 +1,14 @@
-import { useState } from "react";
-import { Briefcase, MapPin, Building2, IndianRupee, Calendar, ChevronDown, MessageSquarePlus } from "lucide-react";
-import type { Job, JobResponse } from "@/lib/jobs/types";
+import { useEffect, useState } from "react";
+import { Briefcase, MapPin, Building2, IndianRupee, Calendar, ChevronDown, MessageSquarePlus, Sparkles, Globe } from "lucide-react";
+import clsx from "clsx";
+import type { Job, JobResponse, JobRelevance } from "@/lib/jobs/types";
+import { recordJobSearchTelemetry } from "@/lib/jobs/telemetry";
 
 export function JobList({ response, onSelectJob }: { response: JobResponse; onSelectJob?: (job: Job) => void }) {
   const [visibleCount, setVisibleCount] = useState(3);
+  useEffect(() => {
+    recordJobSearchTelemetry(response.meta);
+  }, [response.meta]);
 
   if (!response.success || response.jobs.length === 0) {
     return (
@@ -25,6 +30,7 @@ export function JobList({ response, onSelectJob }: { response: JobResponse; onSe
 
   return (
     <div className="flex flex-col gap-3 my-2">
+      <JobSearchNotices meta={response.meta} />
       <div className="text-xs font-medium text-slate-500 px-1">
         Found {response.total} jobs. Showing {visibleJobs.length} of {response.count}:
       </div>
@@ -91,6 +97,8 @@ function JobCard({ job, onSelectJob }: { job: Job; onSelectJob?: (job: Job) => v
         {job.description}
       </div>
 
+      <RelevanceBadges relevance={job.relevance} />
+
       <div className="mt-1 flex items-center gap-2 relative z-10">
         <a 
           href={job.link}
@@ -116,4 +124,89 @@ function JobCard({ job, onSelectJob }: { job: Job; onSelectJob?: (job: Job) => v
       </div>
     </div>
   );
+}
+
+function JobSearchNotices({ meta }: { meta?: JobResponse["meta"] }) {
+  if (!meta) {
+    return null;
+  }
+  const notices: { id: string; text: string; variant: "info" | "warn" }[] = [];
+  if (meta.broadenedSearch) {
+    const keywordText = (meta.generalKeywords ?? []).slice(0, 3).map(formatKeywordLabel).join(", ");
+    notices.push({
+      id: "broadened",
+      variant: "info",
+      text: keywordText
+        ? `Search was broadened using general keywords (${keywordText}) to ensure you see enough variety.`
+        : "Search was broadened using general keywords to ensure you see enough variety.",
+    });
+  }
+  if (typeof meta.lowResultCount === "number" && meta.lowResultCount < 3) {
+    notices.push({
+      id: "low-results",
+      variant: "warn",
+      text: `Only ${meta.lowResultCount} roles matched after broadening. We'll keep an eye on this feed and suggest more general prompts if needed.`,
+    });
+  }
+  if (!notices.length) {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-2 px-1">
+      {notices.map((notice) => (
+        <div
+          key={notice.id}
+          className={clsx(
+            "flex items-start gap-2 rounded-lg border px-3 py-2 text-xs",
+            notice.variant === "info"
+              ? "border-blue-100 bg-blue-50 text-blue-700"
+              : "border-amber-200 bg-amber-50 text-amber-800"
+          )}
+        >
+          {notice.variant === "info" ? <Globe className="h-3.5 w-3.5 mt-0.5" /> : <Sparkles className="h-3.5 w-3.5 mt-0.5" />}
+          <span>{notice.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RelevanceBadges({ relevance }: { relevance?: JobRelevance }) {
+  if (!relevance) {
+    return null;
+  }
+  const { skillMatches = [], generalMatches = [] } = relevance;
+  if (skillMatches.length === 0 && generalMatches.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5 text-[11px]">
+      {skillMatches.map((match) => (
+        <span
+          key={`skill-${match}`}
+          className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700"
+        >
+          <Sparkles className="h-3 w-3" /> Skill match: {formatKeywordLabel(match)}
+        </span>
+      ))}
+      {generalMatches.map((match) => (
+        <span
+          key={`general-${match}`}
+          className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-600"
+        >
+          <Globe className="h-3 w-3" /> Keyword hit: {formatKeywordLabel(match)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function formatKeywordLabel(keyword: string) {
+  if (!keyword) {
+    return keyword;
+  }
+  return keyword
+    .split(" ")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
 }

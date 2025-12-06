@@ -1,4 +1,4 @@
-import { Job, JobFilter, JobResponse, WPJob } from "./types";
+import { Job, JobFilter, JobResponse, JobResponseMeta, JobRelevance, WPJob } from "./types";
 
 const WORDPRESS_API_URL = "https://sportsnaukri.com/wp-json/wp/v2/job_listing";
 
@@ -24,6 +24,8 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
   const desiredLimit = clamp(filter.limit ?? 10, 5, 30);
   const maxPagesToFetch = 5;
   const fetchLimit = Math.min(desiredLimit * 2, 40);
+  const skillKeywords = (filter.skillKeywords ?? []).filter(Boolean);
+  const explicitGeneralKeywords = (filter.generalKeywords ?? []).filter(Boolean);
 
   // Smart search handling
   const searchKeywords: string[] = [];
@@ -62,18 +64,25 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
     baseParams.set("search", searchKeywords.join(" "));
   }
 
+  const generalKeywordPool = explicitGeneralKeywords.length > 0 ? explicitGeneralKeywords : searchKeywords;
+
   const filterContext: FilterContext = {
     locationKeywords,
     jobType,
     searchKeywords,
   };
 
-  const fetchAndFilterPage = async (pageNumber: number) => {
-    const params = new URLSearchParams(baseParams);
+  const fetchAndFilterPage = async (
+    pageNumber: number,
+    paramsTemplate: URLSearchParams,
+    context: FilterContext
+  ) => {
+    const params = new URLSearchParams(paramsTemplate);
     params.set("page", pageNumber.toString());
     const { wpJobs, totalJobs, totalPages } = await fetchWordpressPage(params);
     let jobs = wpJobs.map(cleanJobData).filter((job): job is Job => job !== null);
-    jobs = applyClientFilters(jobs, filterContext);
+    jobs = applyClientFilters(jobs, context);
+    jobs = annotateJobRelevance(jobs, skillKeywords, generalKeywordPool);
     return {
       jobs,
       total: totalJobs,
@@ -90,7 +99,7 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
     let currentPage = page;
 
     while (collected.length < desiredLimit && pagesFetched < maxPagesToFetch) {
-      const pageResult = await fetchAndFilterPage(currentPage);
+      const pageResult = await fetchAndFilterPage(currentPage, baseParams, filterContext);
       pagesFetched += 1;
 
       if (!pageResult) {
@@ -116,7 +125,76 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
       currentPage += 1;
     }
 
+    const needBroaderSearch = searchKeywords.length > 0 && collected.length < desiredLimit;
+    if (needBroaderSearch) {
+      console.info("[JobSearch] Sparse result set; triggering fallback", {
+        searchKeywords,
+        locationKeywords,
+        desiredLimit,
+        collectedCount: collected.length,
+      });
+      const fallbackParams = new URLSearchParams(baseParams);
+      fallbackParams.delete("search");
+      const fallbackContext: FilterContext = {
+        ...filterContext,
+        searchKeywords: [],
+      };
+      let fallbackPage = 1;
+      while (collected.length < desiredLimit && pagesFetched < maxPagesToFetch) {
+        const pageResult = await fetchAndFilterPage(
+          fallbackPage,
+          fallbackParams,
+          fallbackContext
+        );
+        pagesFetched += 1;
+
+        if (!pageResult) {
+          break;
+        }
+
+        totalJobs = Math.max(totalJobs, pageResult.total);
+        totalPages = Math.max(totalPages, pageResult.totalPages);
+
+        for (const job of pageResult.jobs) {
+          if (!seenIds.has(job.id)) {
+            seenIds.add(job.id);
+            collected.push(job);
+            if (collected.length >= desiredLimit) {
+              break;
+            }
+          }
+        }
+
+        if (collected.length >= desiredLimit || fallbackPage >= pageResult.totalPages) {
+          break;
+        }
+        fallbackPage += 1;
+      }
+    }
+
     const paginatedJobs = collected.slice(0, desiredLimit);
+    if (paginatedJobs.length < 3) {
+      console.info("[JobSearch] Sparse final job results", {
+        count: paginatedJobs.length,
+        desiredLimit,
+        searchKeywords,
+        locationKeywords,
+        jobType,
+        fallbackUsed: needBroaderSearch,
+      });
+    }
+
+    const responseMeta: JobResponseMeta = {
+      telemetryId: filter.telemetry?.requestId,
+      conversationId: filter.telemetry?.conversationId,
+      broadenedSearch: needBroaderSearch || undefined,
+      lowResultCount: paginatedJobs.length < 3 ? paginatedJobs.length : undefined,
+      requestedCount: desiredLimit,
+      searchKeywords,
+      skillKeywords,
+      generalKeywords: generalKeywordPool,
+    };
+
     const result: JobResponse = {
       success: true,
       count: paginatedJobs.length,
@@ -124,6 +202,7 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
       totalPages,
       currentPage: page,
       jobs: paginatedJobs,
+      meta: responseMeta,
     };
 
     if (paginatedJobs.length === 0) {
@@ -145,6 +224,10 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
       currentPage: page,
       jobs: [],
       message: error instanceof Error ? error.message : "Failed to fetch jobs",
+      meta: {
+        telemetryId: filter.telemetry?.requestId,
+        conversationId: filter.telemetry?.conversationId,
+      },
     };
   }
 }
@@ -176,6 +259,7 @@ function applyClientFilters(jobs: Job[], context: FilterContext) {
   }
 
   if (searchKeywords.length > 0) {
+    const requiredMatches = Math.max(1, Math.ceil(searchKeywords.length * 0.6));
     filtered = filtered.filter((job) => {
       const searchableText = `
         ${job.title} 
@@ -184,7 +268,8 @@ function applyClientFilters(jobs: Job[], context: FilterContext) {
         ${job.category} 
         ${job.qualification}
       `.toLowerCase();
-      return searchKeywords.every((keyword) => searchableText.includes(keyword));
+      const matches = searchKeywords.filter((keyword) => searchableText.includes(keyword)).length;
+      return matches >= requiredMatches;
     });
   }
 
@@ -269,6 +354,58 @@ function stripHtmlTags(html: string): string {
   return decodeHtmlEntities(
     html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
   );
+}
+
+function annotateJobRelevance(jobs: Job[], skillKeywords: string[], generalKeywords: string[]) {
+  if (!jobs.length) {
+    return jobs;
+  }
+  if (skillKeywords.length === 0 && generalKeywords.length === 0) {
+    return jobs;
+  }
+  return jobs.map((job) => {
+    const relevance = computeJobRelevance(job, skillKeywords, generalKeywords);
+    return relevance ? { ...job, relevance } : job;
+  });
+}
+
+function computeJobRelevance(job: Job, skillKeywords: string[], generalKeywords: string[]): JobRelevance | undefined {
+  const haystack = buildJobHaystack(job);
+  const skillMatches = collectMatches(haystack, skillKeywords);
+  const generalMatches = collectMatches(haystack, generalKeywords);
+  if (skillMatches.length === 0 && generalMatches.length === 0) {
+    return undefined;
+  }
+  return {
+    skillMatches,
+    generalMatches,
+  };
+}
+
+function buildJobHaystack(job: Job): string {
+  return (
+    `${job.title} ${job.description} ${job.employer} ${job.category} ${job.qualification} ${job.experience} ${job.jobType} ${job.location}`
+      .toLowerCase()
+  );
+}
+
+function collectMatches(haystack: string, keywords: string[]): string[] {
+  if (!keywords.length) {
+    return [];
+  }
+  const matches: string[] = [];
+  const seen = new Set<string>();
+  for (const keyword of keywords) {
+    const normalized = keyword.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    if (haystack.includes(normalized)) {
+      matches.push(keyword);
+      seen.add(normalized);
+    }
+  }
+  return matches;
 }
 
 function decodeHtmlEntities(text: string): string {

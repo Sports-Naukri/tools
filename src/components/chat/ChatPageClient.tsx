@@ -39,6 +39,8 @@ import type { Job } from "@/lib/jobs/types";
 
 const ATTACHMENTS_DISABLED = process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
 const DEFAULT_UPLOADS_DISABLED_MESSAGE = "File uploads are disabled in this environment.";
+// Allows hiding post-response suggestion pills without breaking starter prompts.
+const SUGGESTIONS_DISABLED = process.env.NEXT_PUBLIC_CHAT_SUGGESTIONS_DISABLED === "true";
 
 type SessionState = {
   conversation: StoredConversation;
@@ -299,6 +301,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null
   );
   const [suggestionsByMessage, setSuggestionsByMessage] = useState<Record<string, ChatSuggestion[]>>({});
+  useEffect(() => {
+    if (!SUGGESTIONS_DISABLED) {
+      return;
+    }
+    setSuggestionsByMessage({});
+  }, []);
   const attachmentFilesRef = useRef<Map<string, File>>(new Map());
   const hasUploadingAttachments = attachments.some((attachment) => attachment.status === "uploading");
   const hasErroredAttachments = attachments.some((attachment) => attachment.status === "error");
@@ -575,6 +583,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   });
   const fetchSuggestions = useCallback(
     async (assistantMessage: ToolAwareMessage, previousMessage?: ToolAwareMessage) => {
+      if (SUGGESTIONS_DISABLED) {
+        return;
+      }
       if (!assistantMessage || assistantMessage.role !== "assistant") {
         return;
       }
@@ -618,6 +629,35 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   useEffect(() => {
     messagesRef.current = messages as ToolAwareMessage[];
   }, [messages]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const deadlines: number[] = [];
+    if (session.usage.daily.remaining <= 0 && session.usage.daily.resetAt) {
+      deadlines.push(new Date(session.usage.daily.resetAt).getTime());
+    }
+    if (session.usage.chat.remaining <= 0 && session.usage.chat.resetAt) {
+      deadlines.push(new Date(session.usage.chat.resetAt).getTime());
+    }
+    if (!deadlines.length) {
+      return;
+    }
+    const nextDeadline = Math.min(...deadlines);
+    const refresh = () => {
+      void loadUsage(session.conversation.id)
+        .then(onUsageChange)
+        .catch((err) => console.error("[ChatWorkspace] failed to refresh usage after reset", err));
+    };
+    const delay = nextDeadline - Date.now();
+    if (delay <= 0) {
+      refresh();
+      return;
+    }
+    const timerId = window.setTimeout(refresh, delay + 1000);
+    return () => window.clearTimeout(timerId);
+  }, [session.usage.daily.remaining, session.usage.daily.resetAt, session.usage.chat.remaining, session.usage.chat.resetAt, loadUsage, onUsageChange, session.conversation.id]);
 
   const isLoading = status === "streaming" || status === "submitted";
   const toolAwareMessages = messages as ToolAwareMessage[];
@@ -1043,7 +1083,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           documentLookup={documentLookup}
           showRetry={retryAvailable}
           onRetry={handleRetry}
-          suggestionsByMessage={suggestionsByMessage}
+          suggestionsByMessage={SUGGESTIONS_DISABLED ? {} : suggestionsByMessage}
           onSuggestionSelect={(messageId) =>
             setSuggestionsByMessage((prev) => {
               const next = { ...prev };
@@ -1051,7 +1091,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
               return next;
             })
           }
-          onSuggestionClick={handleSuggestionClick}
+          onSuggestionClick={SUGGESTIONS_DISABLED ? undefined : handleSuggestionClick}
+          onStarterClick={handleSuggestionClick}
           isLimitReached={chatDisabled}
           onSelectJob={handleSelectJob}
         />

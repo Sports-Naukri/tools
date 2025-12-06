@@ -8,6 +8,7 @@ import type { AttachmentPreview } from "@/lib/chat/types";
 import type { UsageSnapshot } from "@/lib/chat/types";
 import { CHAT_MODELS } from "@/lib/chat/constants";
 import type { Job } from "@/lib/jobs/types";
+import { formatDurationShort } from "@/lib/time";
 
 type ChatComposerProps = {
   input: string;
@@ -65,6 +66,8 @@ export function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   const primaryError = attachmentsDisabledMessage ?? error;
+  const activeLimitWindow = limitReachedReason && usage ? usage[limitReachedReason] : null;
+  const activeResetCountdown = activeLimitWindow ? formatDurationShort(activeLimitWindow.secondsUntilReset) : null;
 
   // Handle Enter key to submit, Shift+Enter for new line
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -109,6 +112,12 @@ export function ChatComposer({
                   ? "Daily conversation limit reached. Come back tomorrow!" 
                   : "Message limit reached for this conversation."}
               </div>
+
+              {activeResetCountdown && (
+                <p className="text-xs text-slate-500">
+                  Try again in {activeResetCountdown}. Limits reset at midnight.
+                </p>
+              )}
               
               {limitReachedReason === 'chat' && onNewChat && usage && (
                 usage.daily.remaining > 0 ? (

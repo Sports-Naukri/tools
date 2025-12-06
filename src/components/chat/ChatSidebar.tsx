@@ -6,6 +6,7 @@ import clsx from "clsx";
 
 import type { UsageSnapshot } from "@/lib/chat/types";
 import type { StoredConversation } from "@/lib/chat/storage";
+import { formatDurationShort } from "@/lib/time";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "sn-chat-sidebar-width";
 const DEFAULT_EXPANDED_WIDTH = 320;
@@ -74,6 +75,16 @@ export function ChatSidebar({
   const visibleConversations = filteredConversations;
 
   const isDailyLimitReached = usage ? usage.daily.remaining <= 0 : false;
+  const dailyResetLabel = useMemo(() => {
+    if (!usage) {
+      return "Resets at midnight";
+    }
+    if (usage.daily.remaining === 0) {
+      const countdown = formatDurationShort(usage.daily.secondsUntilReset);
+      return countdown ? `Next reset in ${countdown}` : "Waiting for reset";
+    }
+    return "Resets at midnight";
+  }, [usage]);
 
   const handleResizeStart = useCallback(
     (event: React.MouseEvent) => {
@@ -233,7 +244,7 @@ export function ChatSidebar({
                 />
               </div>
               <p className="text-[10px] text-slate-400">
-                Resets at midnight
+                {dailyResetLabel}
               </p>
             </div>
           ) : (

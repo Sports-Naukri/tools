@@ -22,6 +22,7 @@ export type MessageListProps = {
   showRetry?: boolean;
   onRetry?: () => void;
   onSuggestionClick?: (text: string) => void;
+  onStarterClick?: (text: string) => void;
   isLimitReached?: boolean;
   onSelectJob?: (job: Job) => void;
   suggestionsByMessage?: Record<string, ChatSuggestion[]>;
@@ -47,11 +48,13 @@ export function MessageList({
   showRetry, 
   onRetry,
   onSuggestionClick,
+  onStarterClick,
   isLimitReached,
   onSelectJob,
   suggestionsByMessage = {},
   onSuggestionSelect,
 }: MessageListProps) {
+  const handleStarter = onStarterClick ?? onSuggestionClick;
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
       {messages.length === 0 && (
@@ -70,7 +73,7 @@ export function MessageList({
             {STARTER_QUESTIONS.map((q, i) => (
               <button
                 key={i}
-                onClick={() => onSuggestionClick?.(q.text)}
+                onClick={() => handleStarter?.(q.text)}
                 disabled={isLimitReached}
                 className={clsx(
                   "text-left p-4 rounded-xl border transition-all group",

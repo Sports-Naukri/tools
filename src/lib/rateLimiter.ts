@@ -1,10 +1,7 @@
 import { kv } from "@vercel/kv";
+import { DateTime } from "luxon";
 
-import {
-  CHAT_TTL_SECONDS,
-  DAILY_CHAT_LIMIT,
-  MESSAGES_PER_CHAT_LIMIT,
-} from "@/lib/chat/constants";
+import { DAILY_CHAT_LIMIT, MESSAGES_PER_CHAT_LIMIT } from "@/lib/chat/constants";
 
 const hasKvConfig =
   Boolean(process.env.KV_REST_API_URL) &&
@@ -25,13 +22,51 @@ if (!globalStore._rateLimitStore) {
 }
 const memoryStore = globalStore._rateLimitStore;
 
-const nowUtc = () => new Date();
+// Use a single timezone so “midnight reset” behaves consistently for every user.
+const configuredTimezone = process.env.RATE_LIMIT_TIMEZONE || "Asia/Kolkata";
+const RESET_TIMEZONE = (() => {
+  const probe = DateTime.now().setZone(configuredTimezone, { keepLocalTime: false });
+  if (!probe.isValid) {
+    console.warn(
+      `[RateLimiter] Invalid RATE_LIMIT_TIMEZONE "${configuredTimezone}". Falling back to UTC.`
+    );
+    return "UTC";
+  }
+  return configuredTimezone;
+})();
 
-const secondsUntilUtcMidnight = () => {
-  const now = nowUtc();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-  const diff = Math.max(0, (end.getTime() - now.getTime()) / 1000);
-  return Math.ceil(diff);
+type StrictResetMetadata = {
+  resetAt: string;
+  secondsUntilReset: number;
+};
+
+type ResetMetadata = {
+  resetAt: string | null;
+  secondsUntilReset: number | null;
+};
+
+const getLimitZoneNow = () => DateTime.now().setZone(RESET_TIMEZONE, { keepLocalTime: false });
+
+const getNextMidnightReset = (): StrictResetMetadata => {
+  const zonedNow = getLimitZoneNow();
+  const nextMidnight = zonedNow.startOf("day").plus({ days: 1 });
+  const secondsUntilReset = Math.max(1, Math.ceil(nextMidnight.diff(zonedNow, "seconds").seconds));
+  return {
+    resetAt: nextMidnight.toUTC().toISO(),
+    secondsUntilReset,
+  };
+};
+
+const buildResetMetadata = (seconds: number | null): ResetMetadata => {
+  if (seconds == null) {
+    return { resetAt: null, secondsUntilReset: null };
+  }
+  const clamped = Math.max(0, Math.ceil(seconds));
+  const resetInstant = DateTime.utc().plus({ seconds: clamped });
+  return {
+    resetAt: resetInstant.toISO(),
+    secondsUntilReset: clamped,
+  };
 };
 
 async function incrementCounter(key: string, ttlSeconds: number) {
@@ -77,6 +112,34 @@ async function getCounter(key: string) {
   return entry.value;
 }
 
+async function getSecondsUntilExpiration(key: string) {
+  if (hasKvConfig) {
+    try {
+      const kvWithTtl = kv as typeof kv & { ttl?: (targetKey: string) => Promise<number | null> };
+      if (typeof kvWithTtl.ttl === "function") {
+        const ttl = await kvWithTtl.ttl(key);
+        if (typeof ttl === "number" && ttl >= 0) {
+          return ttl;
+        }
+        return null;
+      }
+    } catch (error) {
+      console.warn(`[RateLimiter] Failed to read TTL for ${key}`, error);
+      return null;
+    }
+  }
+
+  const entry = memoryStore.get(key);
+  if (!entry) {
+    return null;
+  }
+  const remainingMs = entry.expiresAt - Date.now();
+  if (remainingMs <= 0) {
+    return 0;
+  }
+  return Math.ceil(remainingMs / 1000);
+}
+
 export class RateLimitError extends Error {
   status = 429;
   code: "DAILY_LIMIT" | "CHAT_LIMIT";
@@ -96,7 +159,8 @@ const chatKey = (ip: string, conversationId: string) =>
 export async function assertCanStartChat(ip: string) {
   const dateKey = new Date().toISOString().substring(0, 10);
   const key = dailyKey(ip, dateKey);
-  const usage = await incrementCounter(key, secondsUntilUtcMidnight());
+  const { secondsUntilReset } = getNextMidnightReset();
+  const usage = await incrementCounter(key, secondsUntilReset);
 
   if (usage > DAILY_CHAT_LIMIT) {
     throw new RateLimitError(
@@ -114,7 +178,8 @@ export async function assertCanStartChat(ip: string) {
 
 export async function assertCanSendMessage(ip: string, conversationId: string) {
   const key = chatKey(ip, conversationId);
-  const usage = await incrementCounter(key, CHAT_TTL_SECONDS);
+  const { secondsUntilReset } = getNextMidnightReset();
+  const usage = await incrementCounter(key, secondsUntilReset);
 
   if (usage > MESSAGES_PER_CHAT_LIMIT) {
     throw new RateLimitError(
@@ -133,18 +198,29 @@ export async function assertCanSendMessage(ip: string, conversationId: string) {
 export async function getUsageSnapshot(ip: string, conversationId?: string) {
   const dateKey = new Date().toISOString().substring(0, 10);
   const dailyUsage = await getCounter(dailyKey(ip, dateKey));
-  const chatUsage = conversationId ? await getCounter(chatKey(ip, conversationId)) : 0;
+  const midnightReset = getNextMidnightReset();
+
+  let chatUsage = 0;
+  let chatResetMeta: ResetMetadata = midnightReset;
+  if (conversationId) {
+    const key = chatKey(ip, conversationId);
+    chatUsage = await getCounter(key);
+    const ttl = await getSecondsUntilExpiration(key);
+    chatResetMeta = ttl == null ? midnightReset : buildResetMetadata(ttl);
+  }
 
   return {
     daily: {
       limit: DAILY_CHAT_LIMIT,
       used: dailyUsage,
       remaining: Math.max(0, DAILY_CHAT_LIMIT - dailyUsage),
+      ...midnightReset,
     },
     chat: {
       limit: MESSAGES_PER_CHAT_LIMIT,
       used: chatUsage,
       remaining: Math.max(0, MESSAGES_PER_CHAT_LIMIT - chatUsage),
+      ...chatResetMeta,
     },
   };
 }

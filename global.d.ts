@@ -8,5 +8,7 @@ declare namespace NodeJS {
 		KV_REST_API_READ_ONLY_TOKEN?: string;
 		BLOB_READ_WRITE_TOKEN?: string;
 		NEXT_PUBLIC_BLOB_BASE_URL?: string;
+		NEXT_PUBLIC_CHAT_SUGGESTIONS_DISABLED?: string;
+		RATE_LIMIT_TIMEZONE?: string;
 	}
 }

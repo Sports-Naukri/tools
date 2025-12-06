@@ -1,6 +1,5 @@
 export const DAILY_CHAT_LIMIT = 5;
 export const MESSAGES_PER_CHAT_LIMIT = 10;
-export const CHAT_TTL_SECONDS = 86_400; // 24 hours
 
 export type ChatModel = {
   /** Internal identifier used across client + server */

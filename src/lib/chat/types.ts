@@ -31,17 +31,17 @@ export type ConversationState = {
  * Snapshot of the user's usage quotas.
  * Returned by the API to enforce limits on the client.
  */
+export type UsageWindow = {
+  limit: number;
+  used: number;
+  remaining: number;
+  resetAt: string | null;
+  secondsUntilReset: number | null;
+};
+
 export type UsageSnapshot = {
-  daily: {
-    limit: number;
-    used: number;
-    remaining: number;
-  };
-  chat: {
-    limit: number;
-    used: number;
-    remaining: number;
-  };
+  daily: UsageWindow;
+  chat: UsageWindow;
 };
 
 export type ChatSuggestion = {

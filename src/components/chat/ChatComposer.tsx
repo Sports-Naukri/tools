@@ -267,7 +267,6 @@ export function ChatComposer({
                     {CHAT_MODELS.map((model) => {
                       const isActive = model.id === currentModel.id;
                       const isLocked = !model.isEnabled;
-                      const vendorLabel = model.vendor.toUpperCase();
 
                       return (
                         <button
@@ -285,7 +284,6 @@ export function ChatComposer({
                           )}
                         >
                           <div>
-                            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">{vendorLabel}</div>
                             <div className="font-medium">{model.name}</div>
                             <div className="text-xs text-slate-400">{model.description}</div>
                           </div>

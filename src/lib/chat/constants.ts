@@ -24,7 +24,7 @@ export const CHAT_MODELS: ChatModel[] = [
     id: "standard",
     vendor: "openai",
     name: "Standard",
-    description: "Balanced SportsNaukri coach (GPT-4o Mini)",
+    description: "Balanced SportsNaukri coach",
     providerModelId: "gpt-4o-mini",
     isEnabled: true,
   },
@@ -32,7 +32,7 @@ export const CHAT_MODELS: ChatModel[] = [
     id: "advanced",
     vendor: "openai",
     name: "Advanced",
-    description: "Coming soon: deeper reasoning mode",
+    description: "Coming soon: Deeper Reasoning",
     providerModelId: "gpt-4o",
     isEnabled: false,
   },
@@ -41,3 +41,5 @@ export const CHAT_MODELS: ChatModel[] = [
 export const DEFAULT_CHAT_MODEL_ID = "standard";
 
 export const ENABLED_MODEL_IDS = CHAT_MODELS.filter((model) => model.isEnabled).map((model) => model.id);
+
+export const FOLLOWUP_TOOL_NAME = "followup_suggestions";

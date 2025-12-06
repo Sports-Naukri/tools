@@ -1,9 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { convertToCoreMessages as convertToModelMessages, streamText, tool, type UIMessage } from "ai";
 import { NextResponse } from "next/server";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 
-import { CHAT_MODELS } from "@/lib/chat/constants";
+import { CHAT_MODELS, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
 import {
   AttachmentValidationError,
   ensureValidAttachments,
@@ -35,6 +35,10 @@ const openAIProvider = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   organization: process.env.OPENAI_ORGANIZATION,
   project: process.env.OPENAI_PROJECT,
+});
+
+const followupToolInputSchema = z.object({
+  suggestions: z.array(z.string().min(4).max(120)).min(1).max(3),
 });
 
 const getEnabledModel = (modelId: string) => CHAT_MODELS.find((model) => model.id === modelId && model.isEnabled);
@@ -106,6 +110,19 @@ export async function POST(req: Request) {
             return results;
           },
         }),
+        [FOLLOWUP_TOOL_NAME]: tool<{ suggestions: string[] }, { suggestions: string[] }>({
+          description:
+            "Call this after you finish answering (unless you just generated a document). Provide up to two short, user-facing follow-up prompts.",
+          inputSchema: followupToolInputSchema,
+          async execute(input) {
+            const cleaned = input.suggestions
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
+              .slice(0, 2)
+              .map((value) => (value.length > 120 ? `${value.slice(0, 117)}...` : value));
+            return { suggestions: cleaned };
+          },
+        }),
       },
       onFinish: ({ usage }) => {
         console.log("Token Usage Report:", {
@@ -153,6 +170,7 @@ const systemPrompt = `You are SportsNaukri's expert career assistant.
 Respond conversationally for standard coaching or Q&A.
 When the user asks about jobs, vacancies, or career opportunities, use the ${JOB_SEARCH_TOOL_NAME} tool to find real listings.
 When the user explicitly asks for a structured asset (resume, cover letter, report, essay) or when a structured document would clearly help, call the ${DOCUMENT_TOOL_NAME} tool exactly once and summarize the output in the live chat instead of pasting the whole document.
+After you finish responding (and only if you did not call ${DOCUMENT_TOOL_NAME}), call the ${FOLLOWUP_TOOL_NAME} tool exactly once with up to two targeted follow-up questions the user might ask next.
 Only output plain chat responses outside of the tool.`;
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];

@@ -9,7 +9,7 @@ import { CanvasPanel } from "@/components/canvas/CanvasPanel";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
-import { DEFAULT_CHAT_MODEL_ID } from "@/lib/chat/constants";
+import { DEFAULT_CHAT_MODEL_ID, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
 import { logAttachmentFailure } from "@/lib/analytics/attachments";
 import {
   ALLOWED_ATTACHMENT_TYPES,
@@ -571,14 +571,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     onFinish: async ({ message }) => {
       hasStartedRef.current = true;
       setAttachments([]);
-      const usage = await loadUsage(session.conversation.id);
-      onUsageChange(usage);
-      await handleFinish(message);
       if (message) {
         const snapshot = messagesRef.current;
         const prev = snapshot.length >= 2 ? snapshot[snapshot.length - 2] : undefined;
         void fetchSuggestions(message, prev);
       }
+      const usagePromise = loadUsage(session.conversation.id)
+        .then(onUsageChange)
+        .catch((err) => console.error("[ChatWorkspace] failed to refresh usage on finish", err));
+      await Promise.all([usagePromise, handleFinish(message)]);
     },
   });
   const fetchSuggestions = useCallback(
@@ -589,10 +590,21 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       if (!assistantMessage || assistantMessage.role !== "assistant") {
         return;
       }
+
+      const hasDocument = extractDocumentsFromMessage(assistantMessage).length > 0;
+      if (!hasDocument) {
+        const inline = extractInlineSuggestions(assistantMessage);
+        if (inline.length > 0) {
+          setSuggestionsByMessage((prev) => ({ ...prev, [assistantMessage.id]: inline }));
+          return;
+        }
+      }
+
       const assistantText = getTextContent(assistantMessage);
       if (!assistantText.trim()) {
         return;
       }
+
       const lastUserMessage =
         previousMessage && previousMessage.role === "user"
           ? previousMessage
@@ -604,6 +616,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         assistantText,
         modelId,
       };
+
       try {
         const res = await fetch("/api/chat/suggestions", {
           method: "POST",
@@ -1307,6 +1320,31 @@ function extractDocumentsFromMessage(message: UIMessage): CanvasDocument[] {
     .map((part) => extractDocumentFromPart(part))
     .filter((document): document is CanvasDocument => Boolean(document))
     .map((document) => cloneDocument(document));
+}
+
+function extractInlineSuggestions(message: ToolAwareMessage): ChatSuggestion[] {
+  if (!message.toolInvocations?.length) {
+    return [];
+  }
+  const record = message.toolInvocations
+    .filter((invocation) => invocation.toolName === FOLLOWUP_TOOL_NAME)
+    .find((invocation) => invocation.state === "result" && Boolean(invocation.result));
+  if (!record || !record.result || typeof record.result !== "object") {
+    return [];
+  }
+  const payload = record.result as { suggestions?: unknown };
+  const values = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+  return values
+    .map((value, index) => {
+      if (typeof value !== "string" || value.trim().length === 0) {
+        return null;
+      }
+      return {
+        id: `${message.id}-inline-suggestion-${index}`,
+        text: value.trim(),
+      } satisfies ChatSuggestion;
+    })
+    .filter((item): item is ChatSuggestion => Boolean(item));
 }
 
 /**

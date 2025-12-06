@@ -51,8 +51,10 @@ const getNextMidnightReset = (): StrictResetMetadata => {
   const zonedNow = getLimitZoneNow();
   const nextMidnight = zonedNow.startOf("day").plus({ days: 1 });
   const secondsUntilReset = Math.max(1, Math.ceil(nextMidnight.diff(zonedNow, "seconds").seconds));
+  const resetInstant = nextMidnight.toUTC();
+  const resetIso = resetInstant.toISO() ?? new Date(resetInstant.toMillis()).toISOString();
   return {
-    resetAt: nextMidnight.toUTC().toISO(),
+    resetAt: resetIso,
     secondsUntilReset,
   };
 };
@@ -63,8 +65,9 @@ const buildResetMetadata = (seconds: number | null): ResetMetadata => {
   }
   const clamped = Math.max(0, Math.ceil(seconds));
   const resetInstant = DateTime.utc().plus({ seconds: clamped });
+  const resetIso = resetInstant.toISO() ?? new Date(resetInstant.toMillis()).toISOString();
   return {
-    resetAt: resetInstant.toISO(),
+    resetAt: resetIso,
     secondsUntilReset: clamped,
   };
 };

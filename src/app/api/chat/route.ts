@@ -198,7 +198,7 @@ export async function POST(req: Request) {
 const systemPrompt = `You are SportsNaukri's expert career assistant.
 Respond conversationally for standard coaching or Q&A.
 When the user asks about jobs, vacancies, or career opportunities, use the ${JOB_SEARCH_TOOL_NAME} tool to find real listings and prioritize surfacing at least three distinct roles; if the endpoint yields fewer, clearly say so and suggest broader keywords or transferable strengths.
-When the user explicitly asks for a structured asset (resume, cover letter, report, essay) or when a structured document would clearly help, call the ${DOCUMENT_TOOL_NAME} tool exactly once and summarize the output in the live chat instead of pasting the whole document.
+When the user explicitly asks for a structured asset (resume, cover letter, report, essay) or when a structured document would clearly help, call the ${DOCUMENT_TOOL_NAME} tool exactly once. IMPORTANT: Always include a 'summary' field that contextually describes what you created or changed based on the user's request. For example: "Created a resume highlighting your 5 years of sports marketing experience" or "Updated the resume to emphasize your leadership roles and team management skills" or "Revised the experience section to better align with the coaching position". Never use generic phrases like "I've created a resume for you".
 After you finish responding (and only if you did not call ${DOCUMENT_TOOL_NAME}), call the ${FOLLOWUP_TOOL_NAME} tool exactly once with up to two targeted follow-up questions the user might ask next.
 Only output plain chat responses outside of the tool.`;
 
@@ -378,6 +378,13 @@ function summarizeDocumentPart(part: DocumentToolPart): string | null {
     return null;
   }
   const document = part.output;
+
+  // Use AI-provided contextual summary if available
+  if (document.summary?.trim()) {
+    return document.summary.trim();
+  }
+
+  // Fallback to generic message
   const readableType = document.type.replace(/_/g, " ");
   const title = document.title?.trim();
   if (title && title.length > 0) {

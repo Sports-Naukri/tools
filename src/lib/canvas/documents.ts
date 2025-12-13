@@ -29,6 +29,11 @@ export const documentInputSchema = z.object({
   title: z.string().min(3),
   type: z.enum(["resume", "cover_letter", "report", "essay"]),
   style: z.enum(["modern", "classic", "minimalist"]).optional(),
+  summary: z
+    .string()
+    .max(200)
+    .describe("A brief, contextual description of what was created or changed. Example: 'Created a resume highlighting your sports management experience' or 'Updated your resume to emphasize leadership roles'.")
+    .optional(),
   content: z.array(documentSectionSchema).min(1),
 });
 

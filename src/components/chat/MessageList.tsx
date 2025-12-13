@@ -100,26 +100,6 @@ export function MessageList({
 
         const suggestions = suggestionsByMessage[message.id] ?? [];
 
-        // Check if this streamed message has a special tool animation showing
-        // We need to check BOTH tool-invocation type AND direct tool part types
-        const hasSpecialToolInProgress = isAssistantStreaming && message.parts?.some(part => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const p = part as any;
-
-          // Check for tool-invocation type
-          if (p.type === "tool-invocation") {
-            const toolName = p.toolInvocation?.toolName;
-            return toolName === DOCUMENT_TOOL_NAME || toolName === JOB_SEARCH_TOOL_NAME;
-          }
-
-          // Check for direct tool part types (tool-generateDocument, tool-searchJobs)
-          if (p.type === `tool-${DOCUMENT_TOOL_NAME}` || p.type === `tool-${JOB_SEARCH_TOOL_NAME}`) {
-            return true;
-          }
-
-          return false;
-        });
-
         return (
           <div key={message.id} className="flex flex-col gap-2">
             <MessageBubble
@@ -432,25 +412,33 @@ type DelayedJobResultsProps = {
  */
 function DelayedJobResults({ output, onSelectJob }: DelayedJobResultsProps) {
   const [showResults, setShowResults] = useState(false);
-  const mountTimeRef = useRef(Date.now());
+  // Initialize with 0, will be set to Date.now() in effect when needed
+  const mountTimeRef = useRef<number>(0);
+  const hasOutputRef = useRef(false);
 
+  // Reset showResults when output becomes null (new search starting)
+  // This uses a ref to track previous state and only schedules updates
   useEffect(() => {
     if (!output) {
-      // Still loading - reset the timer
-      mountTimeRef.current = Date.now();
-      setShowResults(false);
-      return;
+      // New search starting - record start time
+      if (mountTimeRef.current === 0) {
+        mountTimeRef.current = Date.now();
+      }
+      hasOutputRef.current = false;
+      // Reset via timeout to avoid synchronous setState in effect
+      const resetTimeout = setTimeout(() => setShowResults(false), 0);
+      return () => clearTimeout(resetTimeout);
     }
 
-    // Output is ready - wait for minimum display time
-    const elapsed = Date.now() - mountTimeRef.current;
-    const remaining = Math.max(0, JOB_SEARCH_MIN_DISPLAY_MS - elapsed);
+    // Output is ready
+    if (!hasOutputRef.current) {
+      hasOutputRef.current = true;
+      const startTime = mountTimeRef.current || Date.now();
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, JOB_SEARCH_MIN_DISPLAY_MS - elapsed);
 
-    if (remaining > 0) {
       const timeout = setTimeout(() => setShowResults(true), remaining);
       return () => clearTimeout(timeout);
-    } else {
-      setShowResults(true);
     }
   }, [output]);
 

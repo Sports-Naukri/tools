@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Lottie from "lottie-react";
 
 // Import JSON animations from public folder
@@ -80,36 +79,4 @@ export function JobSearchingAnimation() {
             </div>
         </div>
     );
-}
-
-/**
- * Hook to add minimum display time for animations.
- * Ensures animation shows for at least the specified duration.
- */
-export function useMinimumDisplayTime(isLoading: boolean, minMs: number = 1500): boolean {
-    const [showAnimation, setShowAnimation] = useState(false);
-    const [loadStartTime, setLoadStartTime] = useState<number | null>(null);
-
-    useEffect(() => {
-        if (isLoading && !loadStartTime) {
-            setLoadStartTime(Date.now());
-            setShowAnimation(true);
-        } else if (!isLoading && loadStartTime) {
-            const elapsed = Date.now() - loadStartTime;
-            const remaining = Math.max(0, minMs - elapsed);
-
-            if (remaining > 0) {
-                const timeout = setTimeout(() => {
-                    setShowAnimation(false);
-                    setLoadStartTime(null);
-                }, remaining);
-                return () => clearTimeout(timeout);
-            } else {
-                setShowAnimation(false);
-                setLoadStartTime(null);
-            }
-        }
-    }, [isLoading, loadStartTime, minMs]);
-
-    return showAnimation;
 }

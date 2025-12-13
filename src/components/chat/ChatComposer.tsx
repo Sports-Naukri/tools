@@ -108,8 +108,8 @@ export function ChatComposer({
             <div className="flex flex-col items-center gap-3 max-w-sm">
               <div className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600 shadow-sm border border-slate-200">
                 <Lock className="h-4 w-4 text-amber-500" />
-                {limitReachedReason === 'daily' 
-                  ? "Daily conversation limit reached. Come back tomorrow!" 
+                {limitReachedReason === 'daily'
+                  ? "Daily conversation limit reached. Come back tomorrow!"
                   : "Message limit reached for this conversation."}
               </div>
 
@@ -118,7 +118,7 @@ export function ChatComposer({
                   Try again in {activeResetCountdown}. Limits reset at midnight.
                 </p>
               )}
-              
+
               {limitReachedReason === 'chat' && onNewChat && usage && (
                 usage.daily.remaining > 0 ? (
                   <button
@@ -160,10 +160,10 @@ export function ChatComposer({
               const statusText = isLocalOnly
                 ? "Stored locally (resume)"
                 : isUploading
-                ? "Uploading…"
-                : isError
-                ? att.error ?? "Upload failed"
-                : "Ready";
+                  ? "Uploading…"
+                  : isError
+                    ? att.error ?? "Upload failed"
+                    : "Ready";
 
               return (
                 <div
@@ -173,8 +173,8 @@ export function ChatComposer({
                     isError
                       ? "border-red-200 bg-red-50 text-red-600"
                       : isUploading
-                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                      : "border-slate-200 bg-slate-50 text-slate-700"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-slate-200 bg-slate-50 text-slate-700"
                   )}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -196,7 +196,7 @@ export function ChatComposer({
                     {isError && !isLocalOnly && (
                       <button
                         type="button"
-                          onClick={() => onRetryAttachment?.(att.id)}
+                        onClick={() => onRetryAttachment?.(att.id)}
                         className="rounded-full px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
                       >
                         Retry
@@ -251,7 +251,7 @@ export function ChatComposer({
         <div className="flex items-center justify-between p-2">
           <div className="flex items-center gap-2">
             <div className="relative">
-              <button 
+              <button
                 type="button"
                 onClick={() => setIsModelPickerOpen(!isModelPickerOpen)}
                 className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors"
@@ -262,9 +262,9 @@ export function ChatComposer({
 
               {isModelPickerOpen && (
                 <>
-                  <div 
-                    className="fixed inset-0 z-10" 
-                    onClick={() => setIsModelPickerOpen(false)} 
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setIsModelPickerOpen(false)}
                   />
                   <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-slate-200 bg-white p-1 shadow-lg z-20">
                     {CHAT_MODELS.map((model) => {
@@ -337,6 +337,7 @@ export function ChatComposer({
               multiple
               ref={fileInputRef}
               className="hidden"
+              accept="image/png,image/jpeg,image/webp,.doc,.docx,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
               onChange={(e) => {
                 onFileSelect(e.target.files);
                 if (e.target.value) {
@@ -378,9 +379,9 @@ export function ChatComposer({
           </div>
         </div>
       </form>
-      
+
       {primaryError && <p className="mt-2 text-center text-xs text-red-500">{primaryError}</p>}
-      
+
       <div className="mt-2 flex items-center justify-between px-1 text-xs text-slate-400">
         <span>
           AI can make mistakes. Please double check responses.
@@ -389,7 +390,7 @@ export function ChatComposer({
           <span className={clsx(
             "font-medium",
             usage.chat.remaining === 0 ? "text-red-500" :
-            usage.chat.remaining < 3 ? "text-amber-500" : "text-slate-400"
+              usage.chat.remaining < 3 ? "text-amber-500" : "text-slate-400"
           )}>
             {usage.chat.remaining} messages left
           </span>

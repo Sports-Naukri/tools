@@ -4,15 +4,20 @@ const ALLOWED_PROTOCOLS = new Set(["https:"]); // only allow https blob access
 
 export const MAX_ATTACHMENT_FILE_SIZE = DEFAULT_MAX_FILE_SIZE;
 export const MAX_ATTACHMENTS_PER_MESSAGE = DEFAULT_MAX_ATTACHMENTS;
+
+// PDF removed - client-side parsing is unreliable for encrypted/scanned/complex PDFs
 export const ALLOWED_ATTACHMENT_TYPES = [
   "image/png",
   "image/jpeg",
   "image/webp",
-  "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
 ];
+
+// Friendly file type names for user guidance
+export const RESUME_SUPPORTED_FORMATS = "DOCX, DOC, or TXT";
+export const RESUME_FILE_GUIDANCE = `For best results, please upload your resume as ${RESUME_SUPPORTED_FORMATS} format.`;
 
 export type AttachmentPayload = {
   id: string;

@@ -442,3 +442,199 @@
 .chat-markdown code {
   border-radius: 0.25rem;
 }
+
+/* ========================================
+   Chat UI Enhancements
+   ======================================== */
+
+/* --- Phase 1: Message Bubble Enhancements --- */
+
+/* Assistant message glassmorphism */
+.assistant-message {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+/* User message with subtle glow */
+.user-message-glow {
+  box-shadow: 0 4px 20px rgba(0, 109, 255, 0.25);
+}
+
+/* Message entry animation */
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: messageSlideIn 0.4s ease-out forwards;
+}
+
+/* --- Phase 2: Empty State Improvements --- */
+
+/* Starter question card enhancements */
+.starter-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.starter-card:not(:disabled):hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 28px -8px rgba(0, 109, 255, 0.15);
+  border-color: hsl(var(--primary) / 0.3) !important;
+}
+
+/* Floating background shapes for empty state */
+.empty-state-bg {
+  position: relative;
+}
+
+.empty-state-bg::before,
+.empty-state-bg::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.empty-state-bg::before {
+  width: 300px;
+  height: 300px;
+  background: hsl(214 100% 50% / 0.15);
+  top: 10%;
+  left: 10%;
+  animation: float1 8s ease-in-out infinite;
+}
+
+.empty-state-bg::after {
+  width: 250px;
+  height: 250px;
+  background: hsl(214 100% 60% / 0.1);
+  bottom: 20%;
+  right: 15%;
+  animation: float2 10s ease-in-out infinite;
+}
+
+@keyframes float1 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(30px, -20px); }
+}
+
+@keyframes float2 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-20px, 30px); }
+}
+
+/* --- Phase 3: Layout Improvements --- */
+
+/* Chat area subtle gradient background */
+.chat-area-bg {
+  background: 
+    radial-gradient(ellipse at 20% 0%, hsl(214 100% 97% / 0.8) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, hsl(214 100% 97% / 0.6) 0%, transparent 50%),
+    linear-gradient(to bottom, #fafbfc, #ffffff);
+}
+
+/* Message wrapper for hover effects */
+.message-wrapper {
+  position: relative;
+}
+
+/* Timestamp on hover */
+.message-timestamp {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  font-size: 0.65rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.message-wrapper:hover .message-timestamp {
+  opacity: 1;
+}
+
+/* --- Phase 4: AI Generating Indicator --- */
+
+/* Container with rotating gradient border */
+.ai-generating-indicator {
+  position: relative;
+  padding: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    #006dff,
+    #3b82f6,
+    #60a5fa,
+    #93c5fd,
+    #60a5fa,
+    #3b82f6,
+    #006dff
+  );
+  background-size: 300% 100%;
+  animation: gradientBorderMove 2s linear infinite;
+}
+
+@keyframes gradientBorderMove {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+
+/* Inner content area */
+.ai-generating-indicator-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: white;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  color: #475569;
+}
+
+/* Pulsing dot for the indicator */
+.indicator-dot {
+  width: 6px;
+  height: 6px;
+  background: #006dff;
+  border-radius: 50%;
+  animation: indicatorPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes indicatorPulse {
+  0%, 100% { 
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+  50% { 
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* Morphing text animation */
+.morphing-text-enter {
+  animation: textFadeIn 0.3s ease-out forwards;
+}
+
+@keyframes textFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

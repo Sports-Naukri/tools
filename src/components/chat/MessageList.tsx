@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, FileText, Loader2, User, RefreshCw, Briefcase, ChevronDown, ChevronUp } from "lucide-react";
+import { Bot, FileText, User, RefreshCw, Briefcase, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
@@ -12,6 +12,7 @@ import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/
 import { JOB_SEARCH_TOOL_NAME } from "@/lib/jobs/tools";
 import { JobList } from "./JobCard";
 import type { JobResponse, Job } from "@/lib/jobs/types";
+import { DocumentGeneratingAnimation, JobSearchingAnimation } from "./LottieAnimations";
 
 export type MessageListProps = {
   messages: ToolAwareMessage[];
@@ -40,12 +41,12 @@ const STARTER_QUESTIONS = [
  * Renders the list of chat messages.
  * Handles empty states, message bubbles, and loading indicators.
  */
-export function MessageList({ 
-  messages, 
-  isStreaming, 
-  onSelectDocument, 
-  documentLookup = {}, 
-  showRetry, 
+export function MessageList({
+  messages,
+  isStreaming,
+  onSelectDocument,
+  documentLookup = {},
+  showRetry,
   onRetry,
   onSuggestionClick,
   onStarterClick,
@@ -58,7 +59,7 @@ export function MessageList({
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
       {messages.length === 0 && (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-8">
+        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-8 empty-state-bg">
           <div className="space-y-4 flex flex-col items-center">
             <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
               <Bot className="h-6 w-6 text-slate-500" />
@@ -76,10 +77,10 @@ export function MessageList({
                 onClick={() => handleStarter?.(q.text)}
                 disabled={isLimitReached}
                 className={clsx(
-                  "text-left p-4 rounded-xl border transition-all group",
-                  isLimitReached 
-                    ? "border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed" 
-                    : "border-slate-200 hover:bg-slate-50 hover:border-slate-300 bg-white"
+                  "text-left p-4 rounded-xl border transition-all group starter-card",
+                  isLimitReached
+                    ? "border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed"
+                    : "border-slate-200 bg-white"
                 )}
               >
                 <div className={clsx("font-medium text-sm mb-1", isLimitReached ? "text-slate-400" : "text-slate-900")}>
@@ -98,6 +99,26 @@ export function MessageList({
           isStreaming && index === messages.length - 1 && message.role === "assistant";
 
         const suggestions = suggestionsByMessage[message.id] ?? [];
+
+        // Check if this streamed message has a special tool animation showing
+        // We need to check BOTH tool-invocation type AND direct tool part types
+        const hasSpecialToolInProgress = isAssistantStreaming && message.parts?.some(part => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const p = part as any;
+
+          // Check for tool-invocation type
+          if (p.type === "tool-invocation") {
+            const toolName = p.toolInvocation?.toolName;
+            return toolName === DOCUMENT_TOOL_NAME || toolName === JOB_SEARCH_TOOL_NAME;
+          }
+
+          // Check for direct tool part types (tool-generateDocument, tool-searchJobs)
+          if (p.type === `tool-${DOCUMENT_TOOL_NAME}` || p.type === `tool-${JOB_SEARCH_TOOL_NAME}`) {
+            return true;
+          }
+
+          return false;
+        });
 
         return (
           <div key={message.id} className="flex flex-col gap-2">
@@ -133,11 +154,62 @@ export function MessageList({
           </div>
         );
       })}
-      {isStreaming && (
-        <div className="flex items-center gap-2 text-sm text-slate-500 pl-12">
-          <Loader2 className="h-4 w-4 animate-spin" /> Generating answer…
+      {/* Only show generic generating indicator when NO special tool animation is showing */}
+      {isStreaming && (() => {
+        const lastMessage = messages[messages.length - 1];
+        if (!lastMessage || lastMessage.role !== "assistant") return true;
+
+        const hasSpecialTool = lastMessage.parts?.some(part => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const p = part as any;
+
+          // Check for tool-invocation type
+          if (p.type === "tool-invocation") {
+            const toolName = p.toolInvocation?.toolName;
+            return toolName === DOCUMENT_TOOL_NAME || toolName === JOB_SEARCH_TOOL_NAME;
+          }
+
+          // Check for direct tool part types
+          if (p.type === `tool-${DOCUMENT_TOOL_NAME}` || p.type === `tool-${JOB_SEARCH_TOOL_NAME}`) {
+            return true;
+          }
+
+          return false;
+        });
+
+        return !hasSpecialTool;
+      })() && <GeneratingIndicator />}
+    </div>
+  );
+}
+
+const GENERATING_PHRASES = ["Thinking", "Analyzing", "Crafting response", "Almost there"];
+
+/**
+ * Animated indicator shown while the AI is generating a response.
+ * Features a morphing text animation and animated gradient border.
+ */
+function GeneratingIndicator() {
+  const [textIndex, setTextIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTextIndex((prev) => (prev + 1) % GENERATING_PHRASES.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-3 pl-12">
+      <div className="ai-generating-indicator">
+        <div className="ai-generating-indicator-inner">
+          <div className="indicator-dot" />
+          <span key={textIndex} className="morphing-text-enter min-w-[120px]">
+            {GENERATING_PHRASES[textIndex]}
+            <span className="animate-pulse">...</span>
+          </span>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -165,13 +237,22 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
       )}
       <div
         className={clsx(
-          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed flex flex-col gap-2",
-          isUser 
-            ? "bg-[#006dff] text-white rounded-br-sm" 
-            : "bg-transparent text-slate-900 px-0 py-0"
+          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed flex flex-col gap-2 message-enter",
+          isUser
+            ? "bg-[#006dff] text-white rounded-br-sm user-message-glow"
+            : "assistant-message text-slate-900"
         )}
       >
         {message.parts.map((part, index) => {
+          // DEBUG: Log each part being processed
+          console.log(`[MessageList] Processing part ${index}:`, {
+            type: part.type,
+            hasText: 'text' in part,
+            hasOutput: 'output' in part,
+            hasToolInvocation: 'toolInvocation' in part,
+            part: JSON.stringify(part).slice(0, 500)
+          });
+
           if (part.type === 'text') {
             if (part.text.startsWith(":::resume-meta")) {
               return null;
@@ -187,18 +268,37 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
             );
           }
 
-          if (isDocumentToolPart(part)) {
-            const docFromLookup = part.toolCallId ? documentLookup[part.toolCallId] : undefined;
-            const docFromOutput = isGeneratedDocument(part.output) ? part.output : undefined;
+          const isDocPart = isDocumentToolPart(part);
+          console.log(`[MessageList] Part ${index} isDocumentToolPart:`, isDocPart);
+
+          if (isDocPart) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const p = part as any;
+            const docOutput = p.output || p.toolInvocation?.result;
+            const toolCallId = p.toolCallId || p.toolInvocation?.toolCallId;
+            const docFromLookup = toolCallId ? documentLookup[toolCallId] : undefined;
+            const docFromOutput = isGeneratedDocument(docOutput) ? docOutput : undefined;
             const resolvedDocument = docFromLookup ?? docFromOutput;
 
+            console.log(`[MessageList] Document part ${index} details:`, {
+              hasOutput: Boolean(p.output),
+              hasToolInvocationResult: Boolean(p.toolInvocation?.result),
+              toolCallId,
+              docFromLookup: Boolean(docFromLookup),
+              docFromOutput: Boolean(docFromOutput),
+              resolvedDocument: Boolean(resolvedDocument),
+              docOutputType: typeof docOutput,
+              isValidDoc: docOutput ? isGeneratedDocument(docOutput) : 'no output'
+            });
+
             if (!resolvedDocument) {
-              return null;
+              console.warn(`[MessageList] Document part ${index} has no resolved document - showing animation`);
+              return <DocumentGeneratingAnimation key={`doc-loading-${index}`} />;
             }
 
             return (
               <DocumentChip
-                key={`doc-${part.toolCallId ?? index}`}
+                key={`doc-${toolCallId ?? index}`}
                 document={resolvedDocument}
                 onSelectDocument={onSelectDocument}
               />
@@ -207,11 +307,27 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
 
           if (isJobSearchToolPart(part)) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const output = (part as any).output || (part as any).toolInvocation?.result;
-            if (!output) return null;
-            return <JobList key={index} response={output as JobResponse} onSelectJob={onSelectJob} />;
+            const p = part as any;
+            const output = p.output || p.toolInvocation?.result;
+            const toolCallId = p.toolCallId || p.toolInvocation?.toolCallId;
+            return (
+              <DelayedJobResults
+                key={`job-${toolCallId ?? index}`}
+                output={output as JobResponse | null}
+                onSelectJob={onSelectJob}
+              />
+            );
           }
 
+          // Check for in-progress tool invocations
+          if (isToolInProgress(part, DOCUMENT_TOOL_NAME)) {
+            return <DocumentGeneratingAnimation key={`doc-loading-${index}`} />;
+          }
+          if (isToolInProgress(part, JOB_SEARCH_TOOL_NAME)) {
+            return <JobSearchingAnimation key={`job-loading-${index}`} />;
+          }
+
+          console.log(`[MessageList] Part ${index} not matched - returning null`);
           return null;
         })}
       </div>
@@ -303,6 +419,49 @@ function extractJobContext(text: string) {
   }
 }
 
+const JOB_SEARCH_MIN_DISPLAY_MS = 3000; // 3 seconds minimum display time
+
+type DelayedJobResultsProps = {
+  output: JobResponse | null;
+  onSelectJob?: (job: Job) => void;
+};
+
+/**
+ * Shows job search animation for at least 3 seconds before revealing results.
+ * This ensures users see the animation even when results load quickly.
+ */
+function DelayedJobResults({ output, onSelectJob }: DelayedJobResultsProps) {
+  const [showResults, setShowResults] = useState(false);
+  const mountTimeRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!output) {
+      // Still loading - reset the timer
+      mountTimeRef.current = Date.now();
+      setShowResults(false);
+      return;
+    }
+
+    // Output is ready - wait for minimum display time
+    const elapsed = Date.now() - mountTimeRef.current;
+    const remaining = Math.max(0, JOB_SEARCH_MIN_DISPLAY_MS - elapsed);
+
+    if (remaining > 0) {
+      const timeout = setTimeout(() => setShowResults(true), remaining);
+      return () => clearTimeout(timeout);
+    } else {
+      setShowResults(true);
+    }
+  }, [output]);
+
+  // Show animation while loading OR during minimum display delay
+  if (!output || !showResults) {
+    return <JobSearchingAnimation />;
+  }
+
+  return <JobList response={output} onSelectJob={onSelectJob} />;
+}
+
 function ResumeContextChip({ text }: { text: string }) {
   const data = useMemo(() => extractResumeContext(text), [text]);
   const [isOpen, setIsOpen] = useState(false);
@@ -360,6 +519,27 @@ function extractResumeContext(text: string) {
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
 const JOB_SEARCH_PART_TYPE = `tool-${JOB_SEARCH_TOOL_NAME}`;
 
+/**
+ * Checks if a part represents a tool invocation that is currently in progress.
+ * Returns true when the tool has been called but hasn't returned results yet.
+ */
+function isToolInProgress(part: unknown, toolName: string): boolean {
+  if (!part || typeof part !== "object") return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = part as any;
+
+  // Check for standard SDK tool invocation in "call" state
+  if (
+    p.type === "tool-invocation" &&
+    p.toolInvocation?.toolName === toolName &&
+    (p.toolInvocation?.state === "call" || p.toolInvocation?.state === "partial-call")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 type UnknownToolPart = {
   type?: string;
   toolCallId?: string;
@@ -368,7 +548,25 @@ type UnknownToolPart = {
 };
 
 function isDocumentToolPart(part: unknown): part is UnknownToolPart {
-  return Boolean(part && typeof part === "object" && (part as UnknownToolPart).type === DOCUMENT_PART_TYPE);
+  if (!part || typeof part !== "object") return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = part as any;
+
+  // Check for custom part type
+  if (p.type === DOCUMENT_PART_TYPE) {
+    return true;
+  }
+
+  // Check for standard SDK tool invocation
+  if (
+    p.type === "tool-invocation" &&
+    p.toolInvocation?.toolName === DOCUMENT_TOOL_NAME &&
+    (p.toolInvocation?.result || p.toolInvocation?.state === "result")
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function isJobSearchToolPart(part: unknown): part is UnknownToolPart {

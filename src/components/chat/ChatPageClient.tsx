@@ -373,7 +373,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     hasStartedRef.current = session.conversation.messageCount > 0;
   }, [session.conversation.id, session.conversation.messageCount]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
+
   // Track persisted snapshots to avoid unnecessary writes to storage
   const persistedMessageSnapshots = useRef(
     new Map(session.messages.map((message) => [message.id, buildStoredMessageSnapshot(message)]))
@@ -471,7 +471,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
   // Holds the most recent outbound request until it succeeds.
   const lastRequestRef = useRef<PendingRequest | null>(null);
-  
+
   // Keep a ref to the current session to avoid stale closures in callbacks
   const sessionRef = useRef(session);
   useEffect(() => {
@@ -491,7 +491,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   }, [session, refreshHistory]);
 
   const messagesRef = useRef<ToolAwareMessage[]>([]);
-  
+
   const generateTitle = useCallback(async (messageContent: string, modelId: string) => {
     try {
       const res = await fetch("/api/chat/title", {
@@ -510,7 +510,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   // Persist messages only after the assistant responds successfully.
   const handleFinish = useCallback(async (completedMessage?: ToolAwareMessage) => {
     let currentMessages = messagesRef.current;
-    
+
     // Ensure we have the latest content for the completed message
     if (completedMessage) {
       const last = currentMessages[currentMessages.length - 1];
@@ -591,7 +591,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       if (!titleUpdated && message.role === "user" && !currentTitle) {
         const aiTitle = await generateTitle(content, session.conversation.modelId);
         const conversationId = session.conversation.id;
-        
+
         // Animate the title update
         let animatedTitle = "";
         for (let i = 0; i < aiTitle.length; i++) {
@@ -727,10 +727,10 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
   const isLoading = status === "streaming" || status === "submitted";
   const toolAwareMessages = messages as ToolAwareMessage[];
-  
+
   // Ensure document summaries are present in the message list for display
   const displayMessages = useMemo(() => toolAwareMessages.map(ensureDocumentSummaryInMessage), [toolAwareMessages]);
-  
+
   // Extract all documents from the message history for the canvas
   const canvasDocuments = useMemo<CanvasDocument[]>(() => {
     const docs = new Map<string, CanvasDocument>();
@@ -1244,7 +1244,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         resumeSummaryForPrompt ? `Resume summary: ${resumeSummaryForPrompt}` : null,
         `Confirmed strengths: ${strengths}.`,
         preferredKeywordList.length
-          ? `Preferred search keywords: ${preferredKeywordList.join(", " )}.`
+          ? `Preferred search keywords: ${preferredKeywordList.join(", ")}.`
           : null,
         `When you call the ${JOB_SEARCH_TOOL_NAME} tool, start with the general keywords (${generalKeywords.join(", ")}) to keep the search broad. Prioritize surfacing at least 3 distinct opportunities before drilling into any single role. If fewer than 3 roles come back, retry with the top resume strength (${topSkillsForPrompt[0] ?? "sports professional"}). Always explain why each role is still relevant even if only loosely related.`,
       ];
@@ -1306,7 +1306,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const isNewConversation = session.conversation.messageCount === 0;
   const dailyLimitReached = session.usage.daily.remaining <= 0;
   const chatLimitReached = session.usage.chat.remaining <= 0;
-  
+
   // Only block if it's a new conversation AND daily limit is reached, OR if chat limit is reached for this specific chat
   const isLimitReached = (isNewConversation && dailyLimitReached) || chatLimitReached;
   const chatDisabled =
@@ -1356,7 +1356,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
   return (
     <section className="flex flex-1 flex-col h-full relative" style={workspaceStyle}>
-      <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
+      <div className="flex-1 overflow-y-auto chat-area-bg" ref={scrollContainerRef}>
         <MessageList
           messages={displayMessages}
           isStreaming={isLoading}
@@ -1396,8 +1396,8 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           isSearchEnabled={isSearchEnabled}
           onNewChat={onNewChat}
           limitReachedReason={
-            isNewConversation && dailyLimitReached ? 'daily' : 
-            chatLimitReached ? 'chat' : null
+            isNewConversation && dailyLimitReached ? 'daily' :
+              chatLimitReached ? 'chat' : null
           }
           selectedJob={selectedJob}
           onRemoveJob={handleRemoveJob}
@@ -1864,8 +1864,15 @@ function findLastUserMessage(messages: ToolAwareMessage[]): ToolAwareMessage | n
 
 /**
  * Builds a human-readable summary string for a document.
+ * Prioritizes the AI-provided contextual summary, falls back to generic message.
  */
 function buildDocumentSummary(document: CanvasDocument): string {
+  // Use AI-provided contextual summary if available
+  if (document.summary?.trim()) {
+    return document.summary.trim();
+  }
+
+  // Fallback to generic message
   const readableType = document.type.replace(/_/g, " ");
   if (document.title?.trim()) {
     return `I've created a ${readableType} for you: "${document.title.trim()}".`;

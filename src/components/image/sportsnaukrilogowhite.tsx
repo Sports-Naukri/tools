@@ -1,3 +1,12 @@
+/**
+ * SportsNaukri White Logo
+ * 
+ * SVG component for the SportsNaukri logo (White variant).
+ * Used in dark backgrounds or headers.
+ * 
+ * @module components/image/sportsnaukrilogowhite
+ */
+
 interface SportsnaukrilogowhiteProps {
   className?: string;
 }

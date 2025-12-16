@@ -1,3 +1,13 @@
+/**
+ * Model Picker Component
+ * 
+ * Allows users to switch between different AI models (e.g., GPT-4o, GPT-4o-mini).
+ * Displays model capabilities, status (locked/enabled), and active selection.
+ * 
+ * @module components/chat/ModelPicker
+ * @see {@link ../../lib/chat/constants.ts} for model definitions
+ */
+
 "use client";
 
 import { Lock, Sparkles } from "lucide-react";

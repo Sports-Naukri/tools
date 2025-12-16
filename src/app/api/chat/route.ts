@@ -1,7 +1,35 @@
+/**
+ * Main Chat API Route
+ * 
+ * The core streaming endpoint for the SportsNaukri chat system.
+ * Handles AI conversations with support for:
+ * - Tool calling (job search, document generation, skill mapping)
+ * - Resume context injection for personalized responses
+ * - Rate limiting (daily conversations, per-chat messages)
+ * - Multi-step tool execution with streaming responses
+ * 
+ * Modes:
+ * - "jay": Career coach mode - friendly, conversational
+ * - "navigator": Career exploration - analytical, data-driven
+ * 
+ * @module app/api/chat/route
+ * @see {@link ../../../lib/rateLimiter.ts} for rate limiting
+ * @see {@link ../../../lib/jobs/service.ts} for job search
+ * @see {@link ../../../lib/canvas/documents.ts} for document generation
+ */
+
+// ============================================================================
+// External Dependencies
+// ============================================================================
+
 import { createOpenAI } from "@ai-sdk/openai";
-import { convertToCoreMessages as convertToModelMessages, streamText, tool, type UIMessage } from "ai";
+import { convertToCoreMessages as convertToModelMessages, streamText, tool, stepCountIs, type UIMessage } from "ai";
 import { NextResponse } from "next/server";
 import { ZodError, z } from "zod";
+
+// ============================================================================
+// Internal Imports - Chat Infrastructure
+// ============================================================================
 
 import { CHAT_MODELS, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
 import {
@@ -13,9 +41,17 @@ import { chatRequestSchema, type ChatRequestPayload } from "@/lib/chat/schemas";
 import { getClientIp } from "@/lib/ip";
 import {
   RateLimitError,
-  assertCanSendMessage,
-  assertCanStartChat,
+  checkCanSendMessage,
+  checkCanStartConversation,
+  confirmMessageSent,
+  confirmNewConversation,
 } from "@/lib/rateLimiter";
+import { ChatErrorCode, getErrorMessage, type ChatErrorResponse } from "@/lib/errors/codes";
+
+// ============================================================================
+// Internal Imports - Tools & Features
+// ============================================================================
+
 import {
   DOCUMENT_TOOL_NAME,
   documentInputSchema,
@@ -27,24 +63,64 @@ import {
 import { fetchJobs } from "@/lib/jobs/service";
 import { JOB_SEARCH_TOOL_NAME, jobSearchSchema, type JobSearchInput } from "@/lib/jobs/tools";
 import type { JobResponse } from "@/lib/jobs/types";
+import {
+  SKILL_MAPPER_TOOL_NAME,
+  skillMapperInputSchema,
+  skillMapperOutputSchema,
+  mapSkillsToRoles,
+  type SkillMapperInput,
+  type SkillMapperOutput,
+} from "@/lib/skills/mapper";
 
+// ============================================================================
+// Runtime Configuration
+// ============================================================================
+
+/**
+ * Force Node.js runtime (not Edge) for full API compatibility.
+ * Required for streaming responses and some Node.js APIs.
+ */
 export const runtime = "nodejs";
+
+/**
+ * Preferred deployment regions for low latency.
+ * bom1 = Mumbai, sin1 = Singapore, fra1 = Frankfurt
+ */
 export const preferredRegion = ["bom1", "sin1", "fra1"];
 
+// ============================================================================
+// OpenAI Provider Setup
+// ============================================================================
+
+/**
+ * OpenAI provider instance configured from environment variables.
+ * Supports organization and project-level API key scoping.
+ */
 const openAIProvider = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   organization: process.env.OPENAI_ORGANIZATION,
   project: process.env.OPENAI_PROJECT,
 });
 
+// ============================================================================
+// Tool Schemas
+// ============================================================================
+
+/** Schema for the follow-up suggestions tool output */
 const followupToolInputSchema = z.object({
   suggestions: z.array(z.string().min(4).max(120)).min(1).max(3),
 });
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/** Finds an enabled model by ID from the models configuration */
 const getEnabledModel = (modelId: string) => CHAT_MODELS.find((model) => model.id === modelId && model.isEnabled);
 
 export async function POST(req: Request) {
   try {
+    console.log("\n------------------------------------------------------------");
     const json = await req.json();
     const payload = chatRequestSchema.parse(json);
 
@@ -55,11 +131,12 @@ export async function POST(req: Request) {
 
     const ip = getClientIp(req.headers);
 
+    // Check limits BEFORE making AI request (don't increment yet)
     if (payload.isNewConversation) {
-      await assertCanStartChat(ip);
+      await checkCanStartConversation(ip);
     }
 
-    await assertCanSendMessage(ip, payload.conversationId);
+    await checkCanSendMessage(ip, payload.conversationId);
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: "OpenAI API key is not configured" }, { status: 500 });
@@ -77,18 +154,42 @@ export async function POST(req: Request) {
     const resumeMeta = extractLatestResumeMeta(recentUiMessages as UIMessage[]);
     const modelMessages = convertToModelMessages(recentUiMessages as UIMessage[]).filter(isSupportedModelMessage);
 
-    console.log("/api/chat env", {
-      hasKey: Boolean(process.env.OPENAI_API_KEY?.trim()),
-      keyLength: process.env.OPENAI_API_KEY?.trim().length,
-      project: process.env.OPENAI_PROJECT,
-      organization: process.env.OPENAI_ORGANIZATION,
-    });
+    console.log(`🤖 Chat API | model: ${payload.modelId} | mode: ${payload.mode} | key: ✓ | conv: ${payload.conversationId}`);
+
+    // Build resume context section if provided (Phase 5: works for BOTH modes)
+    let resumeContextSection = "";
+    if (payload.resumeContext) {
+      const { name, skills, summary, experience } = payload.resumeContext;
+      const expSummary = experience?.slice(0, 3).map(e => `${e.title} at ${e.company}`).join(", ") || "";
+
+      // Different instructions based on mode
+      const modeInstruction = payload.mode === "navigator"
+        ? "Use this profile to provide personalized career recommendations. Prioritize roles and training that match their existing skills."
+        : "Use this profile when creating resumes, cover letters, or career documents. Pre-fill the user's name, skills, experience, and other relevant details from this profile.";
+
+      resumeContextSection = `
+USER PROFILE (from uploaded resume):
+- Name: ${name || "Not provided"}
+- Skills: ${skills.slice(0, 15).join(", ")}
+- Summary: ${summary || "Not provided"}
+${expSummary ? `- Recent Experience: ${expSummary}` : ""}
+
+${modeInstruction}
+`;
+      console.log(`📋 [Resume Context] Injected: ${skills.length} skills, ${experience?.length ?? 0} experiences for ${payload.mode} mode`);
+    }
+
+    // Select system prompt based on mode, inject resume context if available
+    const basePrompt = payload.mode === "navigator" ? navigatorPrompt : jayPrompt;
+    const activePrompt = resumeContextSection ? `${basePrompt}\n\n${resumeContextSection}` : basePrompt;
 
     const result = await streamText({
       model: openAIProvider(selectedModel.providerModelId),
       messages: modelMessages,
-      system: systemPrompt,
+      system: activePrompt,
       abortSignal: req.signal,
+      maxRetries: 2, // Retry on transient errors like rate limits
+      stopWhen: [stepCountIs(5)], // v5 multi-step loop control
       tools: {
         [DOCUMENT_TOOL_NAME]: tool<DocumentInput, GeneratedDocument>({
           description:
@@ -107,6 +208,7 @@ export async function POST(req: Request) {
           description: "Search for sports-related jobs, internships, and career opportunities on SportsNaukri.com.",
           inputSchema: jobSearchSchema,
           async execute(input) {
+            console.log(`🔍 [Job Search] Query: "${input.search}" | Location: ${input.location || "any"}`);
             const requestId = crypto.randomUUID();
             const resumeSkills = resumeMeta?.topSkills ?? [];
             const resumeGeneralKeywords = resumeMeta?.generalKeywords ?? [];
@@ -136,6 +238,7 @@ export async function POST(req: Request) {
             results.meta.searchKeywords = results.meta.searchKeywords?.length
               ? results.meta.searchKeywords
               : deriveKeywordsFromSearch(input.search);
+            console.log(`🔍 [Job Search] Found ${results.jobs?.length ?? 0} jobs`);
             return results;
           },
         }),
@@ -152,55 +255,213 @@ export async function POST(req: Request) {
             return { suggestions: cleaned };
           },
         }),
+        [SKILL_MAPPER_TOOL_NAME]: tool<SkillMapperInput, SkillMapperOutput>({
+          description:
+            "Map user skills to sports industry roles, recommended training, and job search keywords. Use this when users share their skills or ask about career paths.",
+          inputSchema: skillMapperInputSchema,
+          outputSchema: skillMapperOutputSchema,
+          async execute(input) {
+            console.log(`🎯 [Skill Mapper] Skills: ${input.skills.join(", ")}`);
+            const result = mapSkillsToRoles(input);
+            console.log(`🎯 [Skill Mapper] Found ${result.mappings.length} role matches`);
+            return result;
+          },
+        }),
       },
-      onFinish: ({ usage }) => {
-        console.log("Token Usage Report:", {
-          conversationId: payload.conversationId,
-          model: payload.modelId,
-          ...usage,
-        });
+      // Log each step's completion for debugging multi-step tool flows
+      onStepFinish: ({ text, toolResults, finishReason }) => {
+        const toolNames = toolResults?.map(r => r.toolName).join(", ") || "";
+        console.log(`📍 Step | ${finishReason} | text: ${text?.length ?? 0} chars | tools: ${toolNames || "none"}`);
+      },
+      onFinish: async ({ usage, finishReason, text }) => {
+        console.log(`💰 Tokens | ${payload.conversationId.slice(0, 8)} | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"} | reason: ${finishReason}`);
+
+        // Only increment counters if the response was successful
+        // finishReason: "stop" = normal completion, "tool-calls" = tool was called
+        // finishReason: "error", "length", "content-filter", "unknown" = don't count
+        const isSuccess = (finishReason === "stop" || finishReason === "tool-calls") && (text?.length ?? 0) > 0;
+
+        if (!isSuccess) {
+          console.warn(`⚠️ Response not successful (reason: ${finishReason}, text: ${text?.length ?? 0} chars) - NOT counting toward limit`);
+          return;
+        }
+
+        try {
+          if (payload.isNewConversation) {
+            confirmNewConversation(ip);
+            console.log(`✅ Confirmed new conversation for IP ${ip.slice(0, 8)}`);
+          }
+          confirmMessageSent(ip, payload.conversationId);
+          console.log(`✅ Confirmed message sent in ${payload.conversationId.slice(0, 8)}`);
+        } catch (confirmError) {
+          console.error("Failed to confirm usage:", confirmError);
+        }
+      },
+      onError: (error) => {
+        console.error(`🔴 Stream error for ${payload.conversationId.slice(0, 8)}:`, error);
+        // Don't confirm usage on error - the onFinish will also not confirm
+      },
+      experimental_telemetry: {
+        isEnabled: false, // Disable telemetry to reduce noise
       },
     });
 
+    // Handle streaming response with error wrapping
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (result as any).toUIMessageStreamResponse();
+    const response = (result as any).toUIMessageStreamResponse();
+    return response;
   } catch (error) {
     if (error instanceof ZodError) {
-      console.error("Invalid chat payload", error.issues);
-      return NextResponse.json(
-        { error: "Invalid request payload", issues: error.issues },
+      console.error(`🔴 [${ChatErrorCode.INVALID_PAYLOAD}] Invalid chat payload`, error.issues);
+      return NextResponse.json<ChatErrorResponse>(
+        { error: getErrorMessage(ChatErrorCode.INVALID_PAYLOAD), code: ChatErrorCode.INVALID_PAYLOAD, details: "Zod validation failed" },
         { status: 400 }
       );
     }
 
     if (error instanceof AttachmentValidationError) {
-      return NextResponse.json(
-        { error: error.message, code: error.code },
+      console.error(`🔴 [${ChatErrorCode.ATTACHMENT_ERROR}] Attachment error:`, error.message);
+      return NextResponse.json<ChatErrorResponse>(
+        { error: getErrorMessage(ChatErrorCode.ATTACHMENT_ERROR), code: ChatErrorCode.ATTACHMENT_ERROR, details: error.message },
         { status: 400 }
       );
     }
 
     if (error instanceof RateLimitError) {
-      return NextResponse.json(
-        { error: error.message, code: error.code, remaining: error.remaining },
+      const errorCode = error.code === "CONVERSATION_LIMIT" ? ChatErrorCode.DAILY_LIMIT_REACHED : ChatErrorCode.CHAT_LIMIT_REACHED;
+      console.warn(`⚠️ [${errorCode}] Rate limit:`, error.message);
+      return NextResponse.json<ChatErrorResponse>(
+        { error: getErrorMessage(errorCode), code: errorCode, details: error.message },
         { status: error.status }
       );
     }
 
-    if (error instanceof Error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    // Handle OpenAI rate limit errors (429)
+    if (error && typeof error === "object" && "statusCode" in error) {
+      const apiError = error as { statusCode?: number; message?: string; responseBody?: string };
+      if (apiError.statusCode === 429) {
+        console.warn(`⚠️ [${ChatErrorCode.RATE_LIMIT_EXCEEDED}] OpenAI rate limit:`, apiError.message?.slice(0, 100));
+        return NextResponse.json<ChatErrorResponse>(
+          { error: getErrorMessage(ChatErrorCode.RATE_LIMIT_EXCEEDED), code: ChatErrorCode.RATE_LIMIT_EXCEEDED, details: "OpenAI 429" },
+          { status: 429 }
+        );
+      }
     }
 
-    return NextResponse.json({ error: "Unknown error" }, { status: 500 });
+    // Handle empty response errors from AI SDK
+    if (error instanceof Error && error.message.includes("must contain either output text or tool calls")) {
+      console.warn(`⚠️ [${ChatErrorCode.EMPTY_RESPONSE}] Empty AI response (likely rate limited)`);
+      return NextResponse.json<ChatErrorResponse>(
+        { error: getErrorMessage(ChatErrorCode.EMPTY_RESPONSE), code: ChatErrorCode.EMPTY_RESPONSE, details: "Model returned empty content" },
+        { status: 503 }
+      );
+    }
+
+    if (error instanceof Error) {
+      console.error(`🔴 [${ChatErrorCode.INTERNAL_ERROR}] Chat error:`, error.message);
+      return NextResponse.json<ChatErrorResponse>(
+        { error: getErrorMessage(ChatErrorCode.INTERNAL_ERROR), code: ChatErrorCode.INTERNAL_ERROR, details: error.message },
+        { status: 500 }
+      );
+    }
+
+    console.error(`🔴 [${ChatErrorCode.INTERNAL_ERROR}] Unknown error`);
+    return NextResponse.json<ChatErrorResponse>(
+      { error: getErrorMessage(ChatErrorCode.INTERNAL_ERROR), code: ChatErrorCode.INTERNAL_ERROR },
+      { status: 500 }
+    );
   }
 }
 
-const systemPrompt = `You are SportsNaukri's expert career assistant.
-Respond conversationally for standard coaching or Q&A.
-When the user asks about jobs, vacancies, or career opportunities, use the ${JOB_SEARCH_TOOL_NAME} tool to find real listings and prioritize surfacing at least three distinct roles; if the endpoint yields fewer, clearly say so and suggest broader keywords or transferable strengths.
-When the user explicitly asks for a structured asset (resume, cover letter, report, essay) or when a structured document would clearly help, call the ${DOCUMENT_TOOL_NAME} tool exactly once. IMPORTANT: Always include a 'summary' field that contextually describes what you created or changed based on the user's request. For example: "Created a resume highlighting your 5 years of sports marketing experience" or "Updated the resume to emphasize your leadership roles and team management skills" or "Revised the experience section to better align with the coaching position". Never use generic phrases like "I've created a resume for you".
-After you finish responding (and only if you did not call ${DOCUMENT_TOOL_NAME}), call the ${FOLLOWUP_TOOL_NAME} tool exactly once with up to two targeted follow-up questions the user might ask next.
-Only output plain chat responses outside of the tool.`;
+const jayPrompt = `You are Jay, SportsNaukri's friendly career assistant.
+
+PERSONALITY:
+- Respond concisely and clearly in a polite, empathetic Indian tone
+- Prioritize accuracy and helpfulness for sports job seekers
+- Never fabricate data - only use real information from tools
+
+LANGUAGE:
+- If the user writes in Hindi, respond in Hindi
+- Otherwise, respond in English
+- You can mix Hindi-English naturally if the user does
+
+SCOPE:
+- You ONLY help with SportsNaukri-related topics: job searches, resumes, cover letters, sports careers, coaching, and career guidance
+- For unrelated questions (poems, coding, general knowledge, etc.), politely say: "I'm Jay, and I can only help with sports career topics. Is there anything about jobs or your career I can assist with?"
+
+CAPABILITIES:
+- Use ${JOB_SEARCH_TOOL_NAME} when users ask about jobs, vacancies, or opportunities. Show at least 3 jobs when possible; if fewer exist, suggest broader keywords.
+- Use ${DOCUMENT_TOOL_NAME} for resumes, cover letters, or career documents. Always include a descriptive 'summary' field that explains what you created (e.g., "Created a resume highlighting your 5 years of sports marketing experience").
+- Call ${FOLLOWUP_TOOL_NAME} at the END of every response (unless you used ${DOCUMENT_TOOL_NAME}). Provide exactly 2 relevant follow-up questions.
+
+CRITICAL - JOB SEARCH OUTPUT:
+- After calling ${JOB_SEARCH_TOOL_NAME}, DO NOT describe or list the jobs in your text response. The jobs will be displayed automatically as interactive cards.
+- Your text should only be a brief intro like "Here are some opportunities that match your search:" or "I found some relevant positions for you:"
+- Do NOT repeat job titles, companies, salaries, or details in text - the cards already show this.
+
+INDIAN CONTEXT:
+- All job listings are from India by default
+- "Jobs in India" or "Indian jobs" means show all available jobs (no location filter needed)
+
+Only output plain chat responses outside of tools.`;
+
+// ============================================================================
+// NAVIGATOR SYSTEM PROMPT - Career path exploration mode
+// ============================================================================
+// Used when mode === "navigator" (tab switch in ChatComposer)
+// More analytical and structured than Jay, focuses on skill-to-role mapping
+// Uses skill_mapper tool to provide data-driven career recommendations
+// ============================================================================
+
+const navigatorPrompt = `You are the SportsNaukri Career Navigator, an analytical career guidance system.
+
+PURPOSE:
+Help users discover their ideal career path in the sports industry by mapping their skills, identifying gaps, and recommending specific roles and learning paths.
+
+TONE:
+- Analytical, structured, and professional
+- Data-driven recommendations
+- Focus on actionable insights
+
+LANGUAGE:
+- If the user writes in Hindi, respond in Hindi
+- Otherwise, respond in English
+
+SCOPE:
+- Career path exploration in sports industry
+- Skill-to-role mapping
+- Gap analysis and upskilling recommendations
+- For unrelated questions, say: "I'm the Career Navigator, focused on helping you explore sports career paths. Would you like to discover roles that match your skills?"
+
+CRITICAL INSTRUCTION:
+You MUST ALWAYS produce a text response. Never end your response with just a tool call.
+After using any tool, you MUST write a detailed text response interpreting and presenting the results to the user.
+
+CAPABILITIES:
+- Use ${SKILL_MAPPER_TOOL_NAME} when users share their skills to get role mappings, training, and keywords
+- After getting skill_mapper results, ALWAYS write a formatted response with the career mapping information
+- Use ${JOB_SEARCH_TOOL_NAME} to show real job examples matching user's skill profile
+- Use ${DOCUMENT_TOOL_NAME} for career plans or skill summaries
+- Call ${FOLLOWUP_TOOL_NAME} at the END of every response with relevant next steps
+
+OUTPUT FORMAT (use this AFTER getting skill_mapper results):
+## 🎯 Your Career Mapping
+
+**Skills Identified**: [list from tool results]
+
+**Best-Fit Roles**:
+- [Role 1]: [brief description]
+- [Role 2]: [brief description]
+
+**Tools You Should Know**: [from tool results]
+
+**Recommended Training**: [from tool results]
+
+**Job Search Keywords**: [from tool results]
+
+---
+[Ask if they want to explore a specific role, see matching jobs, or refine their profile]`;
+
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];
 

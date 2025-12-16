@@ -1,16 +1,58 @@
+/**
+ * Job Search Service
+ * 
+ * Core job search implementation that fetches and filters jobs from the
+ * SportsNaukri WordPress API. Features intelligent search handling,
+ * fallback strategies, and resume-based relevance scoring.
+ * 
+ * Features:
+ * - Smart location extraction from search queries
+ * - Fallback to broader search when results are sparse
+ * - Client-side filtering by location, job type, and keywords
+ * - Resume skill matching and relevance scoring
+ * - HTML cleaning and entity decoding
+ * - Pagination with multi-page fetching
+ * 
+ * Search Strategy:
+ * 1. Extract location keywords from search query
+ * 2. Fetch jobs from WordPress API with server-side search
+ * 3. Apply client-side filters (location, job type, keyword matching)
+ * 4. If < desired results, trigger fallback (remove search filter)
+ * 5. Annotate results with resume relevance scores
+ * 
+ * @module lib/jobs/service
+ * @see {@link ./types.ts} for data types
+ * @see {@link ../../app/api/chat/route.ts} for AI tool integration
+ */
+
 import { Job, JobFilter, JobResponse, JobResponseMeta, JobRelevance, WPJob } from "./types";
 
+// ============================================================================
+// WordPress API Configuration
+// ============================================================================
+
+/** SportsNaukri WordPress REST API endpoint for job listings */
 const WORDPRESS_API_URL = "https://sportsnaukri.com/wp-json/wp/v2/job_listing";
 
-// Common location keywords in India
+// ============================================================================
+// Location Intelligence
+// ============================================================================
+
+/**
+ * Common location keywords in India.
+ * Used to extract location filters from search queries.
+ */
 const LOCATION_KEYWORDS = [
-  "mumbai", "delhi", "bangalore", "bengaluru", "hyderabad", "chennai", 
-  "kolkata", "pune", "ahmedabad", "jaipur", "gurgaon", "gurugram", 
-  "noida", "chandigarh", "kochi", "lucknow", "indore", "bhopal", 
+  "mumbai", "delhi", "bangalore", "bengaluru", "hyderabad", "chennai",
+  "kolkata", "pune", "ahmedabad", "jaipur", "gurgaon", "gurugram",
+  "noida", "chandigarh", "kochi", "lucknow", "indore", "bhopal",
   "nagpur", "visakhapatnam", "patna", "vadodara", "goa", "remote"
 ];
 
-// Broad location terms that should NOT filter (return all jobs)
+/**
+ * Broad location terms that indicate "search everywhere".
+ * When detected, no location filter is applied.
+ */
 const BROAD_LOCATION_TERMS = [
   "india", "indian", "nationwide", "any location", "anywhere", "all cities"
 ];
@@ -33,7 +75,7 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
 
   if (search) {
     const keywords = search.toLowerCase().split(/\s+/);
-    
+
     keywords.forEach((keyword) => {
       if (LOCATION_KEYWORDS.includes(keyword)) {
         locationKeywords.push(keyword);

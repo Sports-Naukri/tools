@@ -1,3 +1,17 @@
+/**
+ * Job Card & List Components
+ * 
+ * Renders job search results from the job search API.
+ * Features:
+ * - List view with "Show more" pagination
+ * - Individual job cards with metadata (salary, location, etc.)
+ * - Relevance badges (skill matches vs general keyword matches)
+ * - Telemetry tracking for search impressions
+ * 
+ * @module components/chat/JobCard
+ * @see {@link ../../lib/jobs/types.ts} for job types
+ */
+
 import { useEffect, useState } from "react";
 import { Briefcase, MapPin, Building2, IndianRupee, Calendar, ChevronDown, MessageSquarePlus, Sparkles, Globe } from "lucide-react";
 import clsx from "clsx";
@@ -100,7 +114,7 @@ function JobCard({ job, onSelectJob }: { job: Job; onSelectJob?: (job: Job) => v
       <RelevanceBadges relevance={job.relevance} />
 
       <div className="mt-1 flex items-center gap-2 relative z-10">
-        <a 
+        <a
           href={job.link}
           target="_blank"
           rel="noopener noreferrer"

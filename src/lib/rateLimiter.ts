@@ -1,34 +1,74 @@
-import { kv } from "@vercel/kv";
+/**
+ * Server-Side Rate Limiter
+ * 
+ * In-memory rate limiting for API requests. Enforces two independent limits:
+ * 1. Daily Conversation Limit - Max new conversations per IP per day (resets at midnight)
+ * 2. Per-Conversation Message Limit - Max messages per conversation (never resets)
+ * 
+ * Architecture:
+ * - Uses a global Map for in-memory storage (persists across requests in Node.js)
+ * - Counters use optimistic locking pattern: check → process → confirm
+ * - Daily limits reset at midnight in configured timezone (default: Asia/Kolkata)
+ * - Per-conversation limits use 30-day TTL to prevent memory bloat
+ * 
+ * Note: This is in-memory storage and resets on server restart/redeploy.
+ * 
+ * @module lib/rateLimiter
+ * @see {@link ./chat/constants.ts} for limit values
+ * @see {@link ./ip.ts} for IP extraction
+ * @see {@link ../app/api/chat/route.ts} for usage in API
+ */
+
 import { DateTime } from "luxon";
 
 import { DAILY_CHAT_LIMIT, MESSAGES_PER_CHAT_LIMIT } from "@/lib/chat/constants";
 
-const hasKvConfig =
-  Boolean(process.env.KV_REST_API_URL) &&
-  Boolean(process.env.KV_REST_API_TOKEN);
+// Log initialization for debugging (appears in server logs)
+console.log("⚡ RateLimiter init | Mode: in-memory");
 
-console.log("[RateLimiter] Initialized. KV Configured:", hasKvConfig);
+// ============================================================================
+// In-Memory Storage
+// ============================================================================
 
+/**
+ * Entry in the rate limit store.
+ * @property value - Current counter value
+ * @property expiresAt - Unix timestamp when this entry expires
+ */
 type MemoryEntry = {
   value: number;
   expiresAt: number;
 };
 
-// Use a global singleton to share state across different route handlers in local development (Node.js runtime).
-// In Edge runtime, this global is not shared across isolates, so this fallback only works per-isolate.
+/**
+ * Global singleton store for rate limit counters.
+ * 
+ * Uses the global object to persist across hot reloads in development
+ * and across different API route handlers in production.
+ * 
+ * Note: In Edge runtime, this only works per-isolate (not globally persistent).
+ */
 const globalStore = global as unknown as { _rateLimitStore: Map<string, MemoryEntry> };
 if (!globalStore._rateLimitStore) {
   globalStore._rateLimitStore = new Map<string, MemoryEntry>();
 }
 const memoryStore = globalStore._rateLimitStore;
 
-// Use a single timezone so “midnight reset” behaves consistently for every user.
+// ============================================================================
+// Timezone Configuration
+// ============================================================================
+
+/**
+ * Timezone used for daily reset calculations.
+ * Configurable via RATE_LIMIT_TIMEZONE env var.
+ * Default: Asia/Kolkata (IST) for consistent midnight resets.
+ */
 const configuredTimezone = process.env.RATE_LIMIT_TIMEZONE || "Asia/Kolkata";
 const RESET_TIMEZONE = (() => {
   const probe = DateTime.now().setZone(configuredTimezone, { keepLocalTime: false });
   if (!probe.isValid) {
     console.warn(
-      `[RateLimiter] Invalid RATE_LIMIT_TIMEZONE "${configuredTimezone}". Falling back to UTC.`
+      `⚠️ RateLimiter: Invalid timezone "${configuredTimezone}", using UTC`
     );
     return "UTC";
   }
@@ -59,93 +99,34 @@ const getNextMidnightReset = (): StrictResetMetadata => {
   };
 };
 
-const buildResetMetadata = (seconds: number | null): ResetMetadata => {
-  if (seconds == null) {
-    return { resetAt: null, secondsUntilReset: null };
-  }
-  const clamped = Math.max(0, Math.ceil(seconds));
-  const resetInstant = DateTime.utc().plus({ seconds: clamped });
-  const resetIso = resetInstant.toISO() ?? new Date(resetInstant.toMillis()).toISOString();
-  return {
-    resetAt: resetIso,
-    secondsUntilReset: clamped,
-  };
-};
-
-async function incrementCounter(key: string, ttlSeconds: number) {
-  console.log(`[RateLimiter] Incrementing counter for key: ${key}`);
-  if (hasKvConfig) {
-    const newValue = await kv.incr(key);
-    if (newValue === 1) {
-      await kv.expire(key, ttlSeconds);
-    }
-    console.log(`[RateLimiter] KV increment result: ${newValue}`);
-    return newValue;
-  }
-
+function incrementCounter(key: string, ttlSeconds: number): number {
+  const shortKey = key.split(":").slice(-2).join(":");
   const existing = memoryStore.get(key);
   const expiration = Date.now() + ttlSeconds * 1000;
 
   if (!existing || existing.expiresAt < Date.now()) {
     memoryStore.set(key, { value: 1, expiresAt: expiration });
-    console.log(`[RateLimiter] Memory init result: 1`);
+    console.log(`📊 Rate +1 | ${shortKey} → 1 (new)`);
     return 1;
   }
 
   const value = existing.value + 1;
   memoryStore.set(key, { value, expiresAt: existing.expiresAt });
-  console.log(`[RateLimiter] Memory increment result: ${value}`);
+  console.log(`📊 Rate +1 | ${shortKey} → ${value}`);
   return value;
 }
 
-async function getCounter(key: string) {
-  console.log(`[RateLimiter] Getting counter for key: ${key}`);
-  if (hasKvConfig) {
-    const val = (await kv.get<number>(key)) ?? 0;
-    console.log(`[RateLimiter] KV get result: ${val}`);
-    return val;
-  }
-
+function getCounter(key: string): number {
   const entry = memoryStore.get(key);
   if (!entry || entry.expiresAt < Date.now()) {
-    console.log(`[RateLimiter] Memory get result: 0 (missing or expired)`);
     return 0;
   }
-  console.log(`[RateLimiter] Memory get result: ${entry.value}`);
   return entry.value;
-}
-
-async function getSecondsUntilExpiration(key: string) {
-  if (hasKvConfig) {
-    try {
-      const kvWithTtl = kv as typeof kv & { ttl?: (targetKey: string) => Promise<number | null> };
-      if (typeof kvWithTtl.ttl === "function") {
-        const ttl = await kvWithTtl.ttl(key);
-        if (typeof ttl === "number" && ttl >= 0) {
-          return ttl;
-        }
-        return null;
-      }
-    } catch (error) {
-      console.warn(`[RateLimiter] Failed to read TTL for ${key}`, error);
-      return null;
-    }
-  }
-
-  const entry = memoryStore.get(key);
-  if (!entry) {
-    return null;
-  }
-  const remainingMs = entry.expiresAt - Date.now();
-  if (remainingMs <= 0) {
-    return 0;
-  }
-  return Math.ceil(remainingMs / 1000);
 }
 
 export class RateLimitError extends Error {
   status = 429;
-  code: "DAILY_LIMIT" | "CHAT_LIMIT";
+  code: "CONVERSATION_LIMIT" | "CHAT_LIMIT";
   remaining: number;
 
   constructor(message: string, code: RateLimitError["code"], remaining: number) {
@@ -155,23 +136,45 @@ export class RateLimitError extends Error {
   }
 }
 
-const dailyKey = (ip: string, dateKey: string) => `chat:daily:${ip}:${dateKey}`;
+const conversationKey = (ip: string, dateKey: string) => `chat:daily:${ip}:${dateKey}`;
 const chatKey = (ip: string, conversationId: string) =>
   `chat:conversation:${ip}:${conversationId}`;
 
-export async function assertCanStartChat(ip: string) {
-  const dateKey = new Date().toISOString().substring(0, 10);
-  const key = dailyKey(ip, dateKey);
-  const { secondsUntilReset } = getNextMidnightReset();
-  const usage = await incrementCounter(key, secondsUntilReset);
+// TTL for chat-per-conversation: 30 days (effectively permanent, but prevents memory bloat)
+const CHAT_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
-  if (usage > DAILY_CHAT_LIMIT) {
+/**
+ * Check if user can start a new conversation (doesn't increment yet).
+ * Call confirmNewConversation() after successful AI response.
+ */
+export function checkCanStartConversation(ip: string) {
+  const dateKey = new Date().toISOString().substring(0, 10);
+  const key = conversationKey(ip, dateKey);
+  const usage = getCounter(key);
+
+  if (usage >= DAILY_CHAT_LIMIT) {
     throw new RateLimitError(
-      "Daily chat limit reached",
-      "DAILY_LIMIT",
-      Math.max(0, DAILY_CHAT_LIMIT - usage)
+      "Daily conversation limit reached",
+      "CONVERSATION_LIMIT",
+      0
     );
   }
+
+  return {
+    used: usage,
+    remaining: DAILY_CHAT_LIMIT - usage,
+  };
+}
+
+/**
+ * Confirm a new conversation was successfully started (increments counter).
+ * Only call after AI responds successfully.
+ */
+export function confirmNewConversation(ip: string) {
+  const dateKey = new Date().toISOString().substring(0, 10);
+  const key = conversationKey(ip, dateKey);
+  const { secondsUntilReset } = getNextMidnightReset();
+  const usage = incrementCounter(key, secondsUntilReset);
 
   return {
     used: usage,
@@ -179,18 +182,36 @@ export async function assertCanStartChat(ip: string) {
   };
 }
 
-export async function assertCanSendMessage(ip: string, conversationId: string) {
+/**
+ * Check if user can send a message in this conversation (doesn't increment yet).
+ * Call confirmMessageSent() after successful AI response.
+ */
+export function checkCanSendMessage(ip: string, conversationId: string) {
   const key = chatKey(ip, conversationId);
-  const { secondsUntilReset } = getNextMidnightReset();
-  const usage = await incrementCounter(key, secondsUntilReset);
+  const usage = getCounter(key);
 
-  if (usage > MESSAGES_PER_CHAT_LIMIT) {
+  if (usage >= MESSAGES_PER_CHAT_LIMIT) {
     throw new RateLimitError(
       "Message limit for this chat reached",
       "CHAT_LIMIT",
-      Math.max(0, MESSAGES_PER_CHAT_LIMIT - usage)
+      0
     );
   }
+
+  return {
+    used: usage,
+    remaining: MESSAGES_PER_CHAT_LIMIT - usage,
+  };
+}
+
+/**
+ * Confirm a message was successfully sent (increments counter).
+ * Only call after AI responds successfully.
+ * Uses 30-day TTL (effectively permanent per conversation).
+ */
+export function confirmMessageSent(ip: string, conversationId: string) {
+  const key = chatKey(ip, conversationId);
+  const usage = incrementCounter(key, CHAT_TTL_SECONDS); // 30 days, not midnight!
 
   return {
     used: usage,
@@ -198,25 +219,33 @@ export async function assertCanSendMessage(ip: string, conversationId: string) {
   };
 }
 
-export async function getUsageSnapshot(ip: string, conversationId?: string) {
+// Legacy functions for backward compatibility
+export function assertCanStartChat(ip: string) {
+  return checkCanStartConversation(ip);
+}
+
+export function assertCanSendMessage(ip: string, conversationId: string) {
+  return checkCanSendMessage(ip, conversationId);
+}
+
+export function getUsageSnapshot(ip: string, conversationId?: string) {
   const dateKey = new Date().toISOString().substring(0, 10);
-  const dailyUsage = await getCounter(dailyKey(ip, dateKey));
+  const convUsage = getCounter(conversationKey(ip, dateKey));
   const midnightReset = getNextMidnightReset();
 
   let chatUsage = 0;
-  let chatResetMeta: ResetMetadata = midnightReset;
+  const chatResetMeta: ResetMetadata = { resetAt: null, secondsUntilReset: null }; // No reset for chat limits!
   if (conversationId) {
     const key = chatKey(ip, conversationId);
-    chatUsage = await getCounter(key);
-    const ttl = await getSecondsUntilExpiration(key);
-    chatResetMeta = ttl == null ? midnightReset : buildResetMetadata(ttl);
+    chatUsage = getCounter(key);
+    // Chat limits don't reset - leave resetAt/secondsUntilReset as null
   }
 
   return {
     daily: {
       limit: DAILY_CHAT_LIMIT,
-      used: dailyUsage,
-      remaining: Math.max(0, DAILY_CHAT_LIMIT - dailyUsage),
+      used: convUsage,
+      remaining: Math.max(0, DAILY_CHAT_LIMIT - convUsage),
       ...midnightReset,
     },
     chat: {

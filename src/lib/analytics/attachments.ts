@@ -1,3 +1,12 @@
+/**
+ * Attachment Analytics
+ * 
+ * Utilities for logging file upload failures and stats.
+ * Uses `navigator.sendBeacon` for reliable transmission during unload/errors.
+ * 
+ * @module lib/analytics/attachments
+ */
+
 type AttachmentFailureSource = "client_validation" | "upload_error" | "uploads_disabled";
 
 export type AttachmentFailureEvent = {

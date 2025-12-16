@@ -1,3 +1,17 @@
+/**
+ * Site Header Component
+ * 
+ * Top navigation bar for the public site.
+ * Features:
+ * - Brand logo (SVG)
+ * - Desktop navigation links
+ * - Mobile hamburger menu trigger
+ * - "Early Access" badge/CTA
+ * - Transparent-to-blur visual effect
+ * 
+ * @module components/Header
+ */
+
 "use client";
 
 import Link from "next/link";
@@ -120,40 +134,39 @@ export function Header({
               className="group inline-flex items-center justify-center rounded-full border border-gray-400 p-2 transition"
             >
               <span className="inline-flex text-2xl" aria-hidden="true">
-              {isMenuOpen ? (
-                <svg
-                xmlns="http://www.w3.org/2000/svg"
-                height="24px"
-                viewBox="0 -960 960 960"
-                width="24px"
-                fill="#9CA3AF"
-                className="group-hover:fill-gray-600"
-                >
-                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z" />
-                </svg>
-              ) : (
-                <svg
-                xmlns="http://www.w3.org/2000/svg"
-                height="24px"
-                viewBox="0 -960 960 960"
-                width="24px"
-                fill="#9CA3AF"
-                className="group-hover:fill-gray-600"
-                >
-                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z" />
-                </svg>
-              )}
+                {isMenuOpen ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    height="24px"
+                    viewBox="0 -960 960 960"
+                    width="24px"
+                    fill="#9CA3AF"
+                    className="group-hover:fill-gray-600"
+                  >
+                    <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    height="24px"
+                    viewBox="0 -960 960 960"
+                    width="24px"
+                    fill="#9CA3AF"
+                    className="group-hover:fill-gray-600"
+                  >
+                    <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z" />
+                  </svg>
+                )}
               </span>
             </button>
           </div>
         </div>
       </header>
       <div
-        className={`fixed top-16 inset-y-0 left-0 z-40 h-[calc(100dvh-4rem)] w-[80%] max-w-sm transform-gpu bg-[#f9f7ff]/10 backdrop-blur-md pb-10 transition-transform duration-300 ease-in-out md:w-[320px] md:max-w-none ${
-          isMenuOpen
+        className={`fixed top-16 inset-y-0 left-0 z-40 h-[calc(100dvh-4rem)] w-[80%] max-w-sm transform-gpu bg-[#f9f7ff]/10 backdrop-blur-md pb-10 transition-transform duration-300 ease-in-out md:w-[320px] md:max-w-none ${isMenuOpen
             ? "translate-x-0"
             : "-translate-x-full md:-translate-x-full"
-        }`}
+          }`}
       >
         <div className="flex h-full flex-col">
           <nav className="mt-6 flex flex-col gap-2 px-6">
@@ -196,7 +209,7 @@ export function Header({
                   className="inline-flex transition-transform group-hover:translate-x-0.5"
                   aria-hidden="true"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#FFFFFF"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#FFFFFF"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z" /></svg>
                 </span>
               </Link>
             </div>

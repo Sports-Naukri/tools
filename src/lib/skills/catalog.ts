@@ -1,11 +1,47 @@
+/**
+ * Skill Catalog Definitions
+ * 
+ * Extended skill definitions for skill extraction and matching.
+ * Complements the SKILL_MAPPINGS in mapper.ts with additional
+ * skill categories and keywords for more comprehensive matching.
+ * 
+ * Used by:
+ * - Resume skill extraction
+ * - Advanced skill matching
+ * - Skill categorization
+ * 
+ * @module lib/skills/catalog
+ * @see {@link ./mapper.ts} for role mapping
+ */
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Skill definition with metadata for matching and categorization.
+ */
 export type SkillDefinition = {
+  /** Unique identifier for this skill */
   id: string;
+  /** Human-readable label */
   label: string;
+  /** Skill category for grouping */
   category: string;
+  /** Keywords for fuzzy matching */
   keywords: string[];
+  /** Optional weight for prioritization (higher = more important) */
   weight?: number;
 };
 
+// ============================================================================
+// Skill Definitions Database
+// ============================================================================
+
+/**
+ * Comprehensive skill definitions database.
+ * Organized by category with keywords for matching.
+ */
 export const SKILL_DEFINITIONS: SkillDefinition[] = [
   // Coaching & Training
   {
@@ -220,6 +256,14 @@ export const SKILL_DEFINITIONS: SkillDefinition[] = [
   },
 ];
 
+// ============================================================================
+// Resume Section Headers
+// ============================================================================
+
+/**
+ * Common section headers found in resumes that contain skills.
+ * Used for parsing and extracting skills from resume text.
+ */
 export const SKILL_SECTION_HEADERS = [
   "skills",
   "core skills",

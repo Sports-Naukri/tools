@@ -1,3 +1,16 @@
+/**
+ * Tools Showcase Section
+ * 
+ * Displays the grid of available AI tools (Cards).
+ * Features:
+ * - Mouse-tracking gradient hover effects (spotlight effect)
+ * - Scroll-triggered reveal animations
+ * - Responsive grid layout (1 col mobile, 2 col desktop)
+ * - Reduced motion support
+ * 
+ * @module components/ToolsSection
+ */
+
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";

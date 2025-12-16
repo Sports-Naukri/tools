@@ -1,3 +1,12 @@
+/**
+ * Lottie Animation Components
+ * 
+ * Reusable wrapper for Lottie JSON animations.
+ * Used for specific loading states like "Job Searching" and "Document Generating".
+ * 
+ * @module components/chat/LottieAnimations
+ */
+
 "use client";
 
 import Lottie from "lottie-react";

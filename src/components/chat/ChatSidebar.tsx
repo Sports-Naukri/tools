@@ -1,3 +1,17 @@
+/**
+ * Chat Sidebar Component
+ * 
+ * The main navigation sidebar for the chat interface.
+ * Features:
+ * - Conversation history list with search
+ * - New chat button
+ * - Daily usage quota visualization
+ * - Resume profile management section
+ * - Collapsible state with drag-to-resize functionality
+ * 
+ * @module components/chat/ChatSidebar
+ */
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
@@ -7,6 +21,7 @@ import clsx from "clsx";
 import type { UsageSnapshot } from "@/lib/chat/types";
 import type { StoredConversation } from "@/lib/chat/storage";
 import { formatDurationShort } from "@/lib/time";
+import { ResumeSection } from "./ResumeSection";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "sn-chat-sidebar-width";
 const DEFAULT_EXPANDED_WIDTH = 320;
@@ -115,7 +130,7 @@ export function ChatSidebar({
   );
 
   return (
-    <aside 
+    <aside
       style={{ width: `${isCollapsed ? COLLAPSED_WIDTH : sidebarWidth}px` }}
       className={clsx(
         "relative flex h-full flex-col bg-[#F9F9F9] border-r border-slate-200 transition-all duration-300 ease-in-out"
@@ -128,7 +143,7 @@ export function ChatSidebar({
               <span>Sports Naukri</span>
             </div>
           )}
-          <button 
+          <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="text-slate-500 hover:text-slate-700 transition-colors"
             title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -143,8 +158,8 @@ export function ChatSidebar({
           className={clsx(
             "flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors",
             isCollapsed ? "h-8 w-8 p-0" : "w-full px-4 py-2.5",
-            isDailyLimitReached 
-              ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
+            isDailyLimitReached
+              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
               : "bg-[#006dff] text-white hover:bg-[#0056cc]"
           )}
           title={isDailyLimitReached ? "Daily limit reached" : "New Chat"}
@@ -202,7 +217,7 @@ export function ChatSidebar({
                   )
                 )}
               </button>
-              
+
               {!isCollapsed && (
                 <button
                   onClick={(e) => {
@@ -225,6 +240,9 @@ export function ChatSidebar({
         </div>
       </div>
 
+      {/* Resume Profile Section - above limits */}
+      <ResumeSection isCollapsed={isCollapsed} />
+
       {usage && (
         <div className={clsx("border-t border-slate-200 bg-white", isCollapsed ? "p-2" : "p-4")}>
           {!isCollapsed ? (
@@ -234,11 +252,11 @@ export function ChatSidebar({
                 <span>{usage.daily.remaining} / {usage.daily.limit}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div 
+                <div
                   className={clsx(
                     "h-full transition-all duration-500 ease-out",
-                    usage.daily.remaining === 0 ? "bg-red-500" : 
-                    usage.daily.remaining < 2 ? "bg-amber-500" : "bg-[#006dff]"
+                    usage.daily.remaining === 0 ? "bg-red-500" :
+                      usage.daily.remaining < 2 ? "bg-amber-500" : "bg-[#006dff]"
                   )}
                   style={{ width: `${(usage.daily.remaining / usage.daily.limit) * 100}%` }}
                 />
@@ -261,8 +279,8 @@ export function ChatSidebar({
                   <path
                     className={clsx(
                       "transition-all duration-500 ease-out",
-                      usage.daily.remaining === 0 ? "text-red-500" : 
-                      usage.daily.remaining < 5 ? "text-amber-500" : "text-[#006dff]"
+                      usage.daily.remaining === 0 ? "text-red-500" :
+                        usage.daily.remaining < 5 ? "text-amber-500" : "text-[#006dff]"
                     )}
                     strokeDasharray={`${(usage.daily.remaining / usage.daily.limit) * 100}, 100`}
                     d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"

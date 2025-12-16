@@ -1,3 +1,12 @@
+/**
+ * Home Page (Root Route)
+ * 
+ * Server Component representing the landing page.
+ * Fetches site content and hydrates the client-side `HomePageClient` orchestrator.
+ * 
+ * @module app/page
+ */
+
 import { HomePageClient } from "@/components/HomePageClient";
 import { getSiteContent } from "@/lib/siteContent";
 

@@ -1,3 +1,18 @@
+/**
+ * DOCX Export Utility
+ * 
+ * Client-side generation of Microsoft Word (.docx) files from canvas documents.
+ * Uses `docx` library for document construction and `file-saver` for download.
+ * 
+ * Features:
+ * - Dynamic imports to reduce initial bundle size
+ * - Maps canvas sections to Word styles (Title, Heading 1, Body)
+ * - Auto-sanitizes filenames
+ * 
+ * @module lib/canvas/docx
+ * @see {@link ./documents.ts} for document structure
+ */
+
 import type { CanvasDocument } from "./documents";
 
 /**

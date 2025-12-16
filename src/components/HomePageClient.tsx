@@ -1,3 +1,16 @@
+/**
+ * Home Page Client Orchestrator
+ * 
+ * Orchestrates the landing page interactivity.
+ * Features:
+ * - Mobile menu toggle and state management
+ * - Scroll locking when menu is open
+ * - Smooth scrolling to specific sections ("Scroll" button)
+ * - Responsiveness handlers (closing menu on resize)
+ * 
+ * @module components/HomePageClient
+ */
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -118,11 +131,10 @@ export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
         cta={headerCta}
       />
       <main
-        className={`relative isolate flex-1 pt-16 transform-gpu transition-transform duration-300 ease-in-out md:transition-[margin,transform,filter] ${
-          isMenuOpen
+        className={`relative isolate flex-1 pt-16 transform-gpu transition-transform duration-300 ease-in-out md:transition-[margin,transform,filter] ${isMenuOpen
             ? "translate-x-[80%] blur-sm md:translate-x-0 md:blur-none md:filter-none md:ml-80"
             : "translate-x-0 md:ml-0 filter-none"
-        }`}
+          }`}
         style={{ willChange: "transform" }}
       >
         <HeroSection onScrollClick={handleScrollClick} />

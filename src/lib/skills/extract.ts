@@ -1,18 +1,59 @@
+/**
+ * Skill Extraction from Resumes
+ * 
+ * Extracts skills from resume text using two strategies:
+ * 1. Catalog matching: Match against SKILL_DEFINITIONS keywords
+ * 2. Section parsing: Find "Skills" section and extract listed items
+ * 
+ * Algorithm:
+ * - Normalize text and fuzzy match against skill catalog
+ * - Calculate confidence scores based on keyword frequency and coverage
+ * - Locate skills section in resume and parse individual skills
+ * - Deduplicate and rank by confidence
+ * 
+ * Used by: Resume upload flow, AI profile extraction
+ * 
+ * @module lib/skills/extract
+ * @see {@link ./catalog.ts} for skill definitions
+ */
+
 import { SKILL_DEFINITIONS, SKILL_SECTION_HEADERS } from "./catalog";
 
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * A matched skill with confidence score.
+ */
 export type SkillMatch = {
+  /** Unique identifier */
   id: string;
+  /** Display label */
   label: string;
+  /** Skill category */
   category: string;
+  /** Keywords that matched */
   matches: string[];
-  confidence: number; // 0 - 1
+  /** Confidence score (0-1) */
+  confidence: number;
+  /** Source of the match */
   source: "catalog" | "resume-section";
 };
 
+/**
+ * Options for skill extraction.
+ */
 export type ExtractSkillsOptions = {
+  /** Maximum number of skills to return (default: 20) */
   limit?: number;
 };
 
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/** Section headers that indicate end of skills section */
 const SECTION_STOP_WORDS = [
   "experience",
   "education",
@@ -22,8 +63,28 @@ const SECTION_STOP_WORDS = [
   "summary",
 ];
 
+/** Regex for splitting skill lists */
 const TOKEN_SPLIT_REGEX = /[,;\|•\u2022\n]+/;
 
+// ============================================================================
+// Public Functions
+// ============================================================================
+
+/**
+ * Extracts skills from resume text.
+ * 
+ * Combines catalog matching and section parsing for comprehensive extraction.
+ * 
+ * @param text - Resume text content
+ * @param options - Extraction options
+ * @returns Array of skill matches, sorted by confidence
+ * 
+ * @example
+ * ```ts
+ * const skills = extractSkillsFromResume(resumeText, { limit: 15 });
+ * // Returns top 15 skills with confidence scores
+ * ```
+ */
 export function extractSkillsFromResume(text: string, options: ExtractSkillsOptions = {}): SkillMatch[] {
   if (!text) {
     return [];
@@ -39,6 +100,14 @@ export function extractSkillsFromResume(text: string, options: ExtractSkillsOpti
   return unique.slice(0, limit);
 }
 
+// ============================================================================
+// Catalog Matching
+// ============================================================================
+
+/**
+ * Extracts skills by matching against skill catalog keywords.
+ * Calculates confidence based on frequency and keyword coverage.
+ */
 function extractCatalogSkills(normalizedText: string): SkillMatch[] {
   const matches: SkillMatch[] = [];
   for (const def of SKILL_DEFINITIONS) {

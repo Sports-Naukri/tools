@@ -1,3 +1,12 @@
+/**
+ * Global Type Definitions
+ * 
+ * Ambient type declarations for:
+ * - CSS modules
+ * - NodeJS Process Environment variables
+ * - Third-party library augmentations (mammoth, pdfjs-dist)
+ */
+
 declare module "*.css";
 
 declare namespace NodeJS {

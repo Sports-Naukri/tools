@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "external-assets/**",
+    // Vendor files served from public/
+    "public/**",
   ]),
 ]);
 

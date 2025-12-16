@@ -1,3 +1,20 @@
+/**
+ * Chat Page Client Orchestrator
+ * 
+ * Top-level client component that manages the entire chat session state.
+ * Responsibilities:
+ * - Session Management: Bootstrapping, loading history, new chat creation
+ * - Persistence: Saving messages, conversations, and usage stats to IndexedDB
+ * - AI Integration: Hooking into `useChat` from Vercel AI SDK
+ * - Tool Handling: Intercepting tool results (documents, jobs) for storage
+ * - Telemetry & Analytics: Logging upload failures and usage events
+ * 
+ * This component coordinates the Sidebar, MessageList, Composer, and CanvasPanel.
+ * 
+ * @module components/chat/ChatPageClient
+ * @see {@link ../../lib/chat/storage.ts} for persistence logic
+ */
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -6,10 +23,10 @@ import { Loader2 } from "lucide-react";
 import { nanoid } from "nanoid";
 
 import { CanvasPanel } from "@/components/canvas/CanvasPanel";
-import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ChatComposer, type ChatMode } from "@/components/chat/ChatComposer";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
-import { ResumeSkillDialog, type ResumeSkillDialogProps } from "@/components/chat/resume/ResumeSkillDialog";
+// Resume skill mapping temporarily disabled for redesign
 import { DEFAULT_CHAT_MODEL_ID, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
 import { logAttachmentFailure } from "@/lib/analytics/attachments";
 import {
@@ -35,39 +52,17 @@ import {
   type StoredToolInvocation,
 } from "@/lib/chat/storage";
 import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
+import { getProfile, isContextEnabled } from "@/lib/resume/storage";
 import type { ToolAwareMessage, ToolInvocationState } from "@/lib/chat/tooling";
 import type { Job } from "@/lib/jobs/types";
-import { JOB_SEARCH_TOOL_NAME } from "@/lib/jobs/tools";
-import { extractSkillsFromResume } from "@/lib/skills/extract";
-import { isSupportedResumeFile, parseResumeFile } from "@/lib/resume/parser";
+
+
 
 const ATTACHMENTS_DISABLED = process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
-const DEFAULT_UPLOADS_DISABLED_MESSAGE = "File uploads are disabled in this environment.";
+const DEFAULT_UPLOADS_DISABLED_MESSAGE = "File uploads are temporarily unavailable";
 // Allows hiding post-response suggestion pills without breaking starter prompts.
 const SUGGESTIONS_DISABLED = process.env.NEXT_PUBLIC_CHAT_SUGGESTIONS_DISABLED === "true";
-const RESUME_SUMMARY_WORD_LIMIT = 900;
-const RESUME_HARD_WORD_LIMIT = 1400;
-const RESUME_PROMPT_SUMMARY_WORD_LIMIT = 90;
-const RESUME_PRIORITY_HEADERS = [
-  "experience",
-  "professional experience",
-  "work experience",
-  "projects",
-  "internships",
-  "skills",
-  "education",
-  "achievements",
-  "certifications",
-  "summary",
-];
-const GENERAL_JOB_KEYWORDS = [
-  "sports operations",
-  "sports partnerships",
-  "event management",
-  "sports marketing",
-  "sports analytics",
-  "athlete management",
-];
+
 
 type SessionState = {
   conversation: StoredConversation;
@@ -302,6 +297,7 @@ type PendingRequest = {
   body: {
     conversationId: string;
     modelId: string;
+    mode: "jay" | "navigator";
     isSearchEnabled: boolean;
     attachments: Array<{
       id: string;
@@ -311,15 +307,17 @@ type PendingRequest = {
       url?: string;
     }>;
     isNewConversation: boolean;
+    // Resume context injection (Phase 5) - sent when toggle is ON in Navigator mode
+    resumeContext?: {
+      name?: string | null;
+      skills: string[];
+      summary?: string | null;
+      experience?: Array<{ title: string; company: string }>;
+    } | null;
   };
 };
 
-type ResumeFlowDraft = {
-  attachmentId: string;
-  resumeText: string;
-  wasTrimmed: boolean;
-  limitNotice?: string;
-} & NonNullable<ResumeSkillDialogProps["draft"]>;
+
 
 /**
  * Component responsible for the active chat interface.
@@ -327,6 +325,19 @@ type ResumeFlowDraft = {
  */
 function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleStream, loadUsage, refreshHistory, onNewChat }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
+
+  // Mode state with sessionStorage persistence
+  const [mode, setMode] = useState<ChatMode>(() => {
+    if (typeof window === "undefined") return "jay";
+    const saved = sessionStorage.getItem("sn-chat-mode");
+    return (saved === "navigator" ? "navigator" : "jay") as ChatMode;
+  });
+
+  // Persist mode changes to sessionStorage
+  const handleModeChange = useCallback((newMode: ChatMode) => {
+    setMode(newMode);
+    sessionStorage.setItem("sn-chat-mode", newMode);
+  }, []);
   const isSearchEnabled = false;
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -335,9 +346,40 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null
   );
   const [suggestionsByMessage, setSuggestionsByMessage] = useState<Record<string, ChatSuggestion[]>>({});
-  const [resumeDraft, setResumeDraft] = useState<ResumeFlowDraft | null>(null);
-  const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
-  const [isResumeSubmitting, setIsResumeSubmitting] = useState(false);
+
+  // Resume context for Navigator mode (Phase 5)
+  // Stores the profile data to send with chat requests when toggle is ON
+  const resumeContextRef = useRef<PendingRequest["body"]["resumeContext"]>(null);
+
+  // Load resume context when in Navigator mode and context is enabled
+  useEffect(() => {
+    const loadResumeContext = async () => {
+      // Load resume context for BOTH modes when toggle is ON
+      // This allows Jay to use resume info when creating resumes/documents
+      const enabled = await isContextEnabled();
+      if (!enabled) {
+        resumeContextRef.current = null;
+        return;
+      }
+
+      const profile = await getProfile();
+      if (!profile) {
+        resumeContextRef.current = null;
+        return;
+      }
+
+      resumeContextRef.current = {
+        name: profile.name,
+        skills: profile.skills,
+        summary: profile.summary,
+        experience: profile.experience?.map(e => ({ title: e.title, company: e.company })),
+      };
+      console.log(`📋 [Resume Context] Loaded: ${profile.skills.length} skills for ${mode} mode`);
+    };
+
+    loadResumeContext();
+  }, [mode]);
+
   useEffect(() => {
     if (!SUGGESTIONS_DISABLED) {
       return;
@@ -348,22 +390,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const hasUploadingAttachments = attachments.some((attachment) => attachment.status === "uploading");
   const hasErroredAttachments = attachments.some((attachment) => attachment.status === "error");
   const [input, setInput] = useState("");
-  useEffect(() => {
-    if (!resumeDraft) {
-      return;
-    }
-    const stillAttached = attachments.some((attachment) => attachment.id === resumeDraft.attachmentId);
-    if (!stillAttached) {
-      setIsResumeSubmitting(false);
-      setIsResumeDialogOpen(false);
-      setResumeDraft(null);
-    }
-  }, [attachments, resumeDraft]);
-  useEffect(() => {
-    setIsResumeSubmitting(false);
-    setIsResumeDialogOpen(false);
-    setResumeDraft(null);
-  }, [session.conversation.id]);
+
   // True when the last request failed and the user can retry it inline.
   const [retryAvailable, setRetryAvailable] = useState(false);
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
@@ -616,25 +643,81 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     id: session.conversation.id,
     messages: initialMessages,
     onError: (error) => {
-      setComposerError(error.message);
-      if (lastRequestRef.current) {
-        setRetryAvailable(true);
+      // Detect rate limit or empty response errors and show friendly messages
+      const errorMessage = error.message || "";
+      let userMessage = errorMessage;
+
+      if (errorMessage.includes("rate limit") || errorMessage.includes("Rate limit")) {
+        userMessage = "The AI is currently busy. Please wait a moment and try again.";
+      } else if (errorMessage.includes("must contain either output text or tool calls")) {
+        userMessage = "The AI couldn't respond. Please wait a few seconds and try again.";
+      } else if (errorMessage.includes("429") || errorMessage.includes("too many requests")) {
+        userMessage = "Too many requests. Please slow down and try again.";
       }
+
+      console.warn("🔴 Chat error:", errorMessage.slice(0, 100));
+      setComposerError(userMessage);
+      // Always enable retry when an error occurs - don't check lastRequestRef
+      // because streaming errors happen after sendMessage resolves
+      setRetryAvailable(true);
     },
     onFinish: async ({ message }) => {
+      // Check if the message actually has content - empty content means likely error
+      const hasContent = message?.parts?.some((part) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = part as any;
+        // Check for text content
+        if (p.type === "text" && typeof p.text === "string" && p.text.trim().length > 0) {
+          return true;
+        }
+        // Check for tool outputs
+        if (p.type === "tool-invocation" || p.type?.startsWith("tool-")) {
+          return true;
+        }
+        return false;
+      });
+
+      if (hasContent) {
+        // Only clear pending request on successful completion with actual content
+        lastRequestRef.current = null;
+        setRetryAvailable(false);
+      } else {
+        // Message is empty or has no content - keep retry available
+        console.warn("⚠️ Chat finished but message is empty - keeping retry available");
+
+        // Remove the empty assistant message from the chat
+        if (message?.id) {
+          setMessages((prev) => prev.filter((m) => m.id !== message.id));
+          console.log("🧹 Removed empty assistant message:", message.id);
+        }
+
+        setRetryAvailable(true);
+        setComposerError("The AI couldn't generate a response. Please try again.");
+      }
+
       hasStartedRef.current = true;
       setAttachments([]);
-      if (message) {
+
+      // Only save conversation and fetch suggestions if we got actual content
+      if (message && hasContent) {
         const snapshot = messagesRef.current;
         const prev = snapshot.length >= 2 ? snapshot[snapshot.length - 2] : undefined;
         void fetchSuggestions(message, prev);
+
+        // Refresh usage and save message ONLY on success
+        const usagePromise = loadUsage(session.conversation.id)
+          .then(onUsageChange)
+          .catch((err) => console.error("[ChatWorkspace] failed to refresh usage on finish", err));
+        await Promise.all([usagePromise, handleFinish(message)]);
+      } else {
+        // On failure, just refresh usage to see current state (nothing was incremented server-side)
+        loadUsage(session.conversation.id)
+          .then(onUsageChange)
+          .catch((err) => console.error("[ChatWorkspace] failed to refresh usage on error", err));
       }
-      const usagePromise = loadUsage(session.conversation.id)
-        .then(onUsageChange)
-        .catch((err) => console.error("[ChatWorkspace] failed to refresh usage on finish", err));
-      await Promise.all([usagePromise, handleFinish(message)]);
     },
   });
+
   const fetchSuggestions = useCallback(
     async (assistantMessage: ToolAwareMessage, previousMessage?: ToolAwareMessage) => {
       if (SUGGESTIONS_DISABLED) {
@@ -648,6 +731,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       if (!hasDocument) {
         const inline = extractInlineSuggestions(assistantMessage);
         if (inline.length > 0) {
+          console.log("✅ [Suggestions] Using inline suggestions from AI tool call:", inline.map(s => s.text));
           setSuggestionsByMessage((prev) => ({ ...prev, [assistantMessage.id]: inline }));
           return;
         }
@@ -671,6 +755,17 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       };
 
       try {
+        // Log fallback trigger with diagnostic info
+        const toolNames = assistantMessage.toolInvocations?.map(t => t.toolName) ?? [];
+        const hasFollowupTool = toolNames.includes(FOLLOWUP_TOOL_NAME);
+        console.log(
+          "⚠️ [Suggestions] Fallback triggered:",
+          hasDocument ? "Document generated (skipping inline)" :
+            !assistantMessage.toolInvocations?.length ? "No tool invocations in response" :
+              !hasFollowupTool ? `AI used tools [${toolNames.join(", ")}] but not ${FOLLOWUP_TOOL_NAME}` :
+                `${FOLLOWUP_TOOL_NAME} tool called but returned no suggestions`
+        );
+
         const res = await fetch("/api/chat/suggestions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -726,6 +821,22 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   }, [session.usage.daily.remaining, session.usage.daily.resetAt, session.usage.chat.remaining, session.usage.chat.resetAt, loadUsage, onUsageChange, session.conversation.id]);
 
   const isLoading = status === "streaming" || status === "submitted";
+  const isError = status === "error";
+
+  // Detect error status from useChat and enable retry
+  useEffect(() => {
+    if (isError) {
+      console.warn("🔴 Chat status error detected");
+      setRetryAvailable(true);
+      setComposerError("Something went wrong. Please try again.");
+    }
+  }, [isError]);
+
+  // Debug logging for status changes
+  useEffect(() => {
+    console.log(`📊 Chat status: ${status}`);
+  }, [status]);
+
   const toolAwareMessages = messages as ToolAwareMessage[];
 
   // Ensure document summaries are present in the message list for display
@@ -843,63 +954,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     setSelectedJob(null);
   }, []);
 
-  const processResumeAttachment = useCallback(
-    async (file: File, attachmentId: string) => {
-      try {
-        const parsed = await parseResumeFile(file);
-        if (parsed.wordCount > RESUME_HARD_WORD_LIMIT) {
-          const limitMessage = "Please upload a resume under ~2 pages so we can map it in chat.";
-          setComposerError(limitMessage);
-          setAttachments((prev) =>
-            prev.map((attachment) =>
-              attachment.id === attachmentId
-                ? { ...attachment, status: "error", error: limitMessage }
-                : attachment
-            )
-          );
-          return;
-        }
 
-        const sanitizedText = summarizeResumeContent(parsed.text, RESUME_SUMMARY_WORD_LIMIT);
-        const sanitizedWordCount = countWords(sanitizedText);
-        const wasTrimmed = sanitizedWordCount < parsed.wordCount;
-        const limitNotice = wasTrimmed
-          ? "Trimmed to the most relevant sections so the assistant can read it quickly."
-          : undefined;
-        const skills = extractSkillsFromResume(parsed.text, { limit: 12 });
-
-        setAttachments((prev) =>
-          prev.map((attachment) =>
-            attachment.id === attachmentId ? { ...attachment, status: "ready", error: undefined } : attachment
-          )
-        );
-
-        setResumeDraft({
-          attachmentId,
-          fileName: file.name,
-          wordCount: sanitizedWordCount,
-          readingTimeMinutes: sanitizedWordCount === 0 ? 0 : Math.max(1, Math.round(sanitizedWordCount / 200)),
-          skills,
-          textPreview: sanitizedText.slice(0, 900),
-          limitNotice,
-          resumeText: sanitizedText,
-          wasTrimmed,
-        });
-        setIsResumeDialogOpen(true);
-      } catch (err) {
-        console.error("[ChatWorkspace] Failed to process resume", err);
-        const fallbackMessage =
-          err instanceof Error ? err.message : "Couldn't process the resume. You can still send it manually.";
-        setComposerError(fallbackMessage);
-        setAttachments((prev) =>
-          prev.map((attachment) =>
-            attachment.id === attachmentId ? { ...attachment, status: "error", error: fallbackMessage } : attachment
-          )
-        );
-      }
-    },
-    [setComposerError, setAttachments]
-  );
 
   const workspaceStyle = useMemo<CSSProperties | undefined>(() => {
     if (isCanvasOpen) {
@@ -908,19 +963,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     return undefined;
   }, [isCanvasOpen]);
 
-  const resumeDialogDraft = useMemo<ResumeSkillDialogProps["draft"]>(() => {
-    if (!resumeDraft) {
-      return null;
-    }
-    return {
-      fileName: resumeDraft.fileName,
-      wordCount: resumeDraft.wordCount,
-      readingTimeMinutes: resumeDraft.readingTimeMinutes,
-      skills: resumeDraft.skills,
-      textPreview: resumeDraft.textPreview,
-      limitNotice: resumeDraft.limitNotice,
-    };
-  }, [resumeDraft]);
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -1011,9 +1054,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         body: {
           conversationId: session.conversation.id,
           modelId,
+          mode,
           isSearchEnabled,
           attachments: currentAttachments,
           isNewConversation: !hasStartedRef.current,
+          // Resume context injection (Phase 5) - populated below if toggle ON
+          resumeContext: resumeContextRef.current,
         },
       };
 
@@ -1022,14 +1068,14 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
       try {
         await sendMessage(pendingRequest.message, { body: pendingRequest.body });
-        lastRequestRef.current = null;
+        // Don't clear lastRequestRef here - onFinish will handle it on success
+        // This prevents race condition where streaming errors happen after resolve
         setInput("");
         setSelectedJob(null);
       } catch (sendError) {
-        setRetryAvailable(true);
-        if (sendError instanceof Error) {
-          setComposerError(sendError.message);
-        }
+        // onError callback handles setting retryAvailable
+        // Just log and re-throw for synchronous errors
+        console.warn("🔴 Send failed:", sendError instanceof Error ? sendError.message : "Unknown error");
         throw sendError;
       }
     },
@@ -1048,6 +1094,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       sendMessage,
       setSelectedJob,
       setComposerError,
+      mode,
     ]
   );
 
@@ -1061,14 +1108,30 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
   // Replays the last failed request without forcing the user to retype it.
   const handleRetry = useCallback(async () => {
+    console.log("🔄 Retry button clicked. lastRequestRef:", lastRequestRef.current);
+
     if (!lastRequestRef.current) {
+      console.warn("⚠️ No pending request to retry - lastRequestRef is null");
       return;
     }
+
+    console.log("🔄 Retrying last request:", {
+      messageParts: lastRequestRef.current.message.parts?.length,
+      conversationId: lastRequestRef.current.body.conversationId,
+    });
+
     try {
       setRetryAvailable(false);
+      setComposerError(null);
+
+      // Don't clear lastRequestRef here - onFinish will handle it
+      // If the retry fails, onFinish will detect empty content and re-enable retry
       await sendMessage(lastRequestRef.current.message, { body: lastRequestRef.current.body });
-      lastRequestRef.current = null;
+      // Success is handled by onFinish which clears lastRequestRef
     } catch (retryError) {
+      // This catches synchronous errors only (network errors, etc.)
+      // Streaming errors are handled by onFinish
+      console.warn("🔴 Retry failed:", retryError instanceof Error ? retryError.message : "Unknown error");
       setRetryAvailable(true);
       if (retryError instanceof Error) {
         setComposerError(retryError.message);
@@ -1110,8 +1173,6 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       }
 
       for (const file of selectedFiles) {
-        const isResumeFile = isSupportedResumeFile(file);
-
         if (file.size > MAX_ATTACHMENT_FILE_SIZE) {
           errorMessage = `"${file.name}" is larger than 5MB.`;
           logAttachmentFailure({
@@ -1126,7 +1187,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           continue;
         }
 
-        if (!isResumeFile && !ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
+        if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
           errorMessage = `"${file.name}" type is not supported.`;
           logAttachmentFailure({
             attachmentId: file.name,
@@ -1146,23 +1207,16 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           name: file.name,
           size: file.size,
           type: file.type,
-          status: isResumeFile ? "ready" : "uploading",
-          isLocalOnly: isResumeFile,
+          status: "uploading",
         };
         setAttachments((prev) => [...prev, preview]);
-
-        if (isResumeFile) {
-          void processResumeAttachment(file, id);
-          continue;
-        }
-
         attachmentFilesRef.current.set(id, file);
         void uploadAttachment(file, id);
       }
 
       setComposerError(errorMessage);
     },
-    [attachments.length, uploadsDisabledMessage, session.conversation.id, uploadAttachment, processResumeAttachment]
+    [attachments.length, uploadsDisabledMessage, session.conversation.id, uploadAttachment]
   );
 
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
@@ -1189,119 +1243,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     [uploadAttachment]
   );
 
-  const handleResumeSkip = useCallback(() => {
-    if (resumeDraft) {
-      setAttachments((prev) => prev.filter((attachment) => attachment.id !== resumeDraft.attachmentId));
-    }
-    setIsResumeSubmitting(false);
-    setIsResumeDialogOpen(false);
-    setResumeDraft(null);
-  }, [resumeDraft, setAttachments]);
 
-  const handleResumeConfirm = useCallback(
-    async (skills: string[]) => {
-      if (!resumeDraft) {
-        handleResumeSkip();
-        return;
-      }
-
-      const normalizedSkills = skills.map((skill) => skill.trim()).filter(Boolean);
-      if (normalizedSkills.length === 0) {
-        setComposerError("Select at least one skill to continue.");
-        return;
-      }
-
-      if (hasUploadingAttachments) {
-        setComposerError("Please wait for your resume upload to finish.");
-        return;
-      }
-
-      if (hasErroredAttachments) {
-        setComposerError("Fix or remove failed uploads before continuing.");
-        return;
-      }
-
-      const resumeStillAttached = attachments.some((attachment) => attachment.id === resumeDraft.attachmentId);
-      if (!resumeStillAttached) {
-        setComposerError("Your resume attachment is no longer available. Reattach it to continue.");
-        return;
-      }
-
-      const userIntent = input.trim();
-      const strengths = normalizedSkills.join(", ");
-      const intro = userIntent
-        ? userIntent
-        : "Use this resume to find relevant sports-industry jobs on SportsNaukri.";
-      const resumeSummaryForPrompt = summarizeResumeContent(
-        resumeDraft.resumeText,
-        RESUME_PROMPT_SUMMARY_WORD_LIMIT
-      );
-      const topSkillsForPrompt = normalizedSkills.slice(0, 4);
-      const generalKeywords = selectGeneralKeywords(topSkillsForPrompt);
-      const preferredKeywordList = Array.from(new Set([topSkillsForPrompt[0], ...generalKeywords].filter(Boolean)));
-      const promptSections = [
-        intro,
-        resumeSummaryForPrompt ? `Resume summary: ${resumeSummaryForPrompt}` : null,
-        `Confirmed strengths: ${strengths}.`,
-        preferredKeywordList.length
-          ? `Preferred search keywords: ${preferredKeywordList.join(", ")}.`
-          : null,
-        `When you call the ${JOB_SEARCH_TOOL_NAME} tool, start with the general keywords (${generalKeywords.join(", ")}) to keep the search broad. Prioritize surfacing at least 3 distinct opportunities before drilling into any single role. If fewer than 3 roles come back, retry with the top resume strength (${topSkillsForPrompt[0] ?? "sports professional"}). Always explain why each role is still relevant even if only loosely related.`,
-      ];
-      const prompt = promptSections.filter(Boolean).join("\n\n");
-
-      const resumeContextPart: UIPart = {
-        type: "text",
-        text: `:::resume-context ${JSON.stringify({
-          attachmentId: resumeDraft.attachmentId,
-          fileName: resumeDraft.fileName,
-          wordCount: resumeDraft.wordCount,
-          readingTimeMinutes: resumeDraft.readingTimeMinutes,
-          summary: resumeDraft.textPreview,
-          fullText: resumeDraft.resumeText,
-          strengths: normalizedSkills,
-          wasTrimmed: resumeDraft.wasTrimmed,
-        })} :::`,
-      };
-      const resumeMetaPart: UIPart = {
-        type: "text",
-        text: `:::resume-meta ${JSON.stringify({
-          summary: resumeSummaryForPrompt,
-          topSkills: topSkillsForPrompt,
-          generalKeywords,
-        })} :::`,
-      };
-
-      console.info("[ResumeFlow] Prepared search payload", {
-        summaryLength: resumeSummaryForPrompt?.length ?? 0,
-        topSkills: topSkillsForPrompt,
-        generalKeywords,
-      });
-
-      setIsResumeSubmitting(true);
-      try {
-        await submitMessage(prompt, [resumeMetaPart, resumeContextPart]);
-        setIsResumeDialogOpen(false);
-        setResumeDraft(null);
-        setAttachments((prev) => prev.filter((attachment) => attachment.id !== resumeDraft.attachmentId));
-      } catch (error) {
-        console.error("[ChatWorkspace] Resume-triggered search failed", error);
-      } finally {
-        setIsResumeSubmitting(false);
-      }
-    },
-    [
-      resumeDraft,
-      attachments,
-      hasUploadingAttachments,
-      hasErroredAttachments,
-      input,
-      submitMessage,
-      handleResumeSkip,
-      setComposerError,
-      setAttachments,
-    ]
-  );
 
   const isNewConversation = session.conversation.messageCount === 0;
   const dailyLimitReached = session.usage.daily.remaining <= 0;
@@ -1325,6 +1267,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       body: {
         conversationId: session.conversation.id,
         modelId,
+        mode,
         isSearchEnabled,
         attachments: [],
         isNewConversation: !hasStartedRef.current,
@@ -1343,7 +1286,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         setComposerError(sendError.message);
       }
     }
-  }, [chatDisabled, session.conversation.id, modelId, isSearchEnabled, sendMessage]);
+  }, [chatDisabled, session.conversation.id, modelId, isSearchEnabled, sendMessage, mode]);
 
   useEffect(() => {
     const node = scrollContainerRef.current;
@@ -1401,10 +1344,11 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           }
           selectedJob={selectedJob}
           onRemoveJob={handleRemoveJob}
-          attachmentsDisabledMessage={uploadsDisabledMessage}
           hasUploadingAttachments={hasUploadingAttachments}
           hasErroredAttachments={hasErroredAttachments}
           onRetryAttachment={handleRetryAttachment}
+          mode={mode}
+          onModeChange={handleModeChange}
         />
       </div>
 
@@ -1413,15 +1357,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         isOpen={isCanvasOpen}
         onClose={() => setIsCanvasOpen(false)}
       />
-      <ResumeSkillDialog
-        key={resumeDraft ? resumeDraft.attachmentId : "resume-skill-dialog"}
-        isOpen={isResumeDialogOpen}
-        onClose={handleResumeSkip}
-        onSkip={handleResumeSkip}
-        onConfirm={handleResumeConfirm}
-        draft={resumeDialogDraft}
-        isSubmitting={isResumeSubmitting}
-      />
+
     </section>
   );
 }
@@ -1458,94 +1394,7 @@ function deriveTitle(content: string) {
   return `${trimmed.slice(0, 47)}…`;
 }
 
-function summarizeResumeContent(text: string, wordLimit: number): string {
-  if (!text) {
-    return "";
-  }
-  const paragraphs = text
-    .split(/\n+/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
 
-  if (!paragraphs.length) {
-    return truncateWords(text, wordLimit);
-  }
-
-  const prioritized: string[] = [];
-  const fallback: string[] = [];
-
-  for (const paragraph of paragraphs) {
-    const normalized = paragraph.toLowerCase();
-    const bucket = RESUME_PRIORITY_HEADERS.some((header) => normalized.startsWith(header))
-      ? prioritized
-      : fallback;
-    bucket.push(paragraph);
-  }
-
-  const summary = collectWordsFromParagraphs([...prioritized, ...fallback], wordLimit);
-  if (summary.trim().length > 0) {
-    return summary;
-  }
-  return truncateWords(text, wordLimit);
-}
-
-function collectWordsFromParagraphs(paragraphs: string[], limit: number): string {
-  const tokens: string[] = [];
-  for (const paragraph of paragraphs) {
-    const words = paragraph.split(/\s+/);
-    for (const word of words) {
-      if (!word) continue;
-      tokens.push(word);
-      if (tokens.length >= limit) {
-        return tokens.join(" ");
-      }
-    }
-  }
-  return tokens.join(" ");
-}
-
-function truncateWords(text: string, limit: number): string {
-  const normalized = text.trim();
-  if (!normalized) {
-    return "";
-  }
-  const tokens = normalized.split(/\s+/);
-  if (tokens.length <= limit) {
-    return tokens.join(" ");
-  }
-  return tokens.slice(0, limit).join(" ");
-}
-
-function countWords(value: string): number {
-  if (!value || !value.trim()) {
-    return 0;
-  }
-  return value.trim().split(/\s+/).length;
-}
-
-function selectGeneralKeywords(skills: string[], desiredCount = 2): string[] {
-  const normalizedSkills = new Set(skills.map((skill) => skill.toLowerCase()));
-  const selected: string[] = [];
-  for (const keyword of GENERAL_JOB_KEYWORDS) {
-    if (selected.length >= desiredCount) {
-      break;
-    }
-    if (!normalizedSkills.has(keyword.toLowerCase())) {
-      selected.push(keyword);
-    }
-  }
-  if (selected.length < desiredCount) {
-    for (const keyword of GENERAL_JOB_KEYWORDS) {
-      if (selected.length >= desiredCount) {
-        break;
-      }
-      if (!selected.includes(keyword)) {
-        selected.push(keyword);
-      }
-    }
-  }
-  return selected;
-}
 
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
 
@@ -1692,14 +1541,40 @@ function extractInlineSuggestions(message: ToolAwareMessage): ChatSuggestion[] {
   if (!message.toolInvocations?.length) {
     return [];
   }
-  const record = message.toolInvocations
-    .filter((invocation) => invocation.toolName === FOLLOWUP_TOOL_NAME)
-    .find((invocation) => invocation.state === "result" && Boolean(invocation.result));
-  if (!record || !record.result || typeof record.result !== "object") {
+
+  // Find all followup tool calls (for debugging)
+  const followupInvocations = message.toolInvocations.filter(
+    (invocation) => invocation.toolName === FOLLOWUP_TOOL_NAME
+  );
+
+  if (followupInvocations.length === 0) {
+    // AI didn't call the suggestions tool - this is normal, not an error
     return [];
   }
+
+  const record = followupInvocations.find(
+    (invocation) => invocation.state === "result" && Boolean(invocation.result)
+  );
+
+  if (!record) {
+    // Tool was called but hasn't completed or failed
+    const states = followupInvocations.map(i => i.state);
+    console.warn(`⚠️ [Suggestions] generateFollowups tool called but not completed. States: [${states.join(", ")}]`);
+    return [];
+  }
+
+  if (!record.result || typeof record.result !== "object") {
+    console.warn("⚠️ [Suggestions] generateFollowups returned invalid result:", record.result);
+    return [];
+  }
+
   const payload = record.result as { suggestions?: unknown };
   const values = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+
+  if (values.length === 0) {
+    console.warn("⚠️ [Suggestions] generateFollowups returned empty suggestions array");
+  }
+
   return values
     .map((value, index) => {
       if (typeof value !== "string" || value.trim().length === 0) {

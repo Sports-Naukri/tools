@@ -1,4 +1,14 @@
-import { put } from "@vercel/blob";
+/**
+ * Local File Storage
+ * 
+ * Handles file uploads using local filesystem storage.
+ * Files are stored in the public/uploads directory and served statically.
+ * 
+ * @module lib/blob
+ */
+
+import { writeFile, mkdir } from "fs/promises";
+import { join } from "path";
 
 export type BlobUploadParams = {
   fileName: string;
@@ -14,28 +24,38 @@ export class BlobConfigError extends Error {
   }
 }
 
+/**
+ * Uploads a file to local storage.
+ * Files are stored in public/uploads and served statically.
+ * 
+ * @param params - Upload parameters
+ * @returns Object with URL, pathname, and size
+ */
 export async function uploadToBlob({
   fileName,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   contentType,
   data,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   access = "public",
 }: BlobUploadParams) {
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
-  if (!token) {
-    console.error("[blob] Missing BLOB_READ_WRITE_TOKEN; skipping upload");
-    throw new BlobConfigError("BLOB_READ_WRITE_TOKEN is not configured");
-  }
+  // Ensure uploads directory exists
+  const uploadsDir = join(process.cwd(), "public", "uploads");
+  await mkdir(uploadsDir, { recursive: true });
 
-  const blob = await put(fileName, data, {
-    contentType,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    access: access as any,
-    token,
-  });
+  // Write file to disk
+  const filePath = join(uploadsDir, fileName);
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  await writeFile(filePath, buffer);
+
+  // Return URL for accessing the file
+  // Files in public/ are served at the root path
+  const url = `/uploads/${fileName}`;
 
   return {
-    url: blob.url,
-    pathname: blob.pathname,
-    size: data.byteLength,
+    url,
+    pathname: fileName,
+    size: buffer.byteLength,
   };
 }
+

@@ -1,3 +1,18 @@
+/**
+ * Message List Component
+ * 
+ * Renders the chronological list of chat messages.
+ * Features:
+ * - Message bubbles (User/Assistant) using Markdown
+ * - Empty state with "Starter Questions"
+ * - Loading indicators/animations for different tool states
+ * - Inline suggestions for follow-up questions
+ * - Rendering of "Chips" for documents and job context
+ * 
+ * @module components/chat/MessageList
+ * @see {@link ./LottieAnimations.tsx} for loading states
+ */
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -119,21 +134,25 @@ export function MessageList({
                 onDismiss={() => onSuggestionSelect?.(message.id)}
               />
             )}
-            {showRetry && index === messages.length - 1 && (
-              <div className="flex justify-end px-4 items-center gap-2">
-                <span className="text-xs text-red-500">Failed to send</span>
-                <button
-                  type="button"
-                  onClick={() => onRetry?.()}
-                  className="text-red-500 text-sm flex items-center gap-1 hover:underline"
-                >
-                  <RefreshCw className="h-3 w-3" /> Retry
-                </button>
-              </div>
-            )}
+            {/* Retry button removed from here - now shown at end of list */}
           </div>
         );
       })}
+
+      {/* Retry button - shown at end of message list, not tied to specific message */}
+      {showRetry && !isStreaming && (
+        <div className="flex justify-center px-4 py-3 items-center gap-2">
+          <span className="text-xs text-red-500">Failed to send</span>
+          <button
+            type="button"
+            onClick={() => onRetry?.()}
+            className="bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
+          </button>
+        </div>
+      )}
+
       {/* Only show generic generating indicator when NO special tool animation is showing */}
       {isStreaming && (() => {
         const lastMessage = messages[messages.length - 1];
@@ -208,6 +227,7 @@ type MessageBubbleProps = {
  */
 function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingAssistant = false, onSelectJob }: MessageBubbleProps) {
   const isUser = message.role === "user";
+
   return (
     <div className={clsx("flex gap-4", isUser ? "justify-end" : "justify-start")}>
       {!isUser && (
@@ -224,15 +244,6 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
         )}
       >
         {message.parts.map((part, index) => {
-          // DEBUG: Log each part being processed
-          console.log(`[MessageList] Processing part ${index}:`, {
-            type: part.type,
-            hasText: 'text' in part,
-            hasOutput: 'output' in part,
-            hasToolInvocation: 'toolInvocation' in part,
-            part: JSON.stringify(part).slice(0, 500)
-          });
-
           if (part.type === 'text') {
             if (part.text.startsWith(":::resume-meta")) {
               return null;
@@ -249,7 +260,6 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
           }
 
           const isDocPart = isDocumentToolPart(part);
-          console.log(`[MessageList] Part ${index} isDocumentToolPart:`, isDocPart);
 
           if (isDocPart) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,19 +270,7 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
             const docFromOutput = isGeneratedDocument(docOutput) ? docOutput : undefined;
             const resolvedDocument = docFromLookup ?? docFromOutput;
 
-            console.log(`[MessageList] Document part ${index} details:`, {
-              hasOutput: Boolean(p.output),
-              hasToolInvocationResult: Boolean(p.toolInvocation?.result),
-              toolCallId,
-              docFromLookup: Boolean(docFromLookup),
-              docFromOutput: Boolean(docFromOutput),
-              resolvedDocument: Boolean(resolvedDocument),
-              docOutputType: typeof docOutput,
-              isValidDoc: docOutput ? isGeneratedDocument(docOutput) : 'no output'
-            });
-
             if (!resolvedDocument) {
-              console.warn(`[MessageList] Document part ${index} has no resolved document - showing animation`);
               return <DocumentGeneratingAnimation key={`doc-loading-${index}`} />;
             }
 
@@ -288,7 +286,8 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
           if (isJobSearchToolPart(part)) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const p = part as any;
-            const output = p.output || p.toolInvocation?.result;
+            // AI SDK v5 uses .output, older versions use .result
+            const output = p.output || p.toolInvocation?.output || p.toolInvocation?.result;
             const toolCallId = p.toolCallId || p.toolInvocation?.toolCallId;
             return (
               <DelayedJobResults
@@ -307,7 +306,6 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
             return <JobSearchingAnimation key={`job-loading-${index}`} />;
           }
 
-          console.log(`[MessageList] Part ${index} not matched - returning null`);
           return null;
         })}
       </div>
@@ -399,7 +397,7 @@ function extractJobContext(text: string) {
   }
 }
 
-const JOB_SEARCH_MIN_DISPLAY_MS = 3000; // 3 seconds minimum display time
+
 
 type DelayedJobResultsProps = {
   output: JobResponse | null;
@@ -407,46 +405,16 @@ type DelayedJobResultsProps = {
 };
 
 /**
- * Shows job search animation for at least 3 seconds before revealing results.
- * This ensures users see the animation even when results load quickly.
+ * Shows job search animation while loading, then reveals results immediately when ready.
+ * Previous 3-second delay was removed because streaming re-renders kept cancelling the timer.
  */
 function DelayedJobResults({ output, onSelectJob }: DelayedJobResultsProps) {
-  const [showResults, setShowResults] = useState(false);
-  // Initialize with 0, will be set to Date.now() in effect when needed
-  const mountTimeRef = useRef<number>(0);
-  const hasOutputRef = useRef(false);
-
-  // Reset showResults when output becomes null (new search starting)
-  // This uses a ref to track previous state and only schedules updates
-  useEffect(() => {
-    if (!output) {
-      // New search starting - record start time
-      if (mountTimeRef.current === 0) {
-        mountTimeRef.current = Date.now();
-      }
-      hasOutputRef.current = false;
-      // Reset via timeout to avoid synchronous setState in effect
-      const resetTimeout = setTimeout(() => setShowResults(false), 0);
-      return () => clearTimeout(resetTimeout);
-    }
-
-    // Output is ready
-    if (!hasOutputRef.current) {
-      hasOutputRef.current = true;
-      const startTime = mountTimeRef.current || Date.now();
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, JOB_SEARCH_MIN_DISPLAY_MS - elapsed);
-
-      const timeout = setTimeout(() => setShowResults(true), remaining);
-      return () => clearTimeout(timeout);
-    }
-  }, [output]);
-
-  // Show animation while loading OR during minimum display delay
-  if (!output || !showResults) {
+  // Show animation while loading
+  if (!output) {
     return <JobSearchingAnimation />;
   }
 
+  // Output is ready - render cards immediately
   return <JobList response={output} onSelectJob={onSelectJob} />;
 }
 
@@ -568,10 +536,11 @@ function isJobSearchToolPart(part: unknown): part is UnknownToolPart {
   }
 
   // Check for standard SDK tool invocation
+  // AI SDK v5 uses .output instead of .result, so check both for compatibility
   if (
     p.type === "tool-invocation" &&
     p.toolInvocation?.toolName === JOB_SEARCH_TOOL_NAME &&
-    p.toolInvocation?.result
+    (p.toolInvocation?.result || p.toolInvocation?.output)
   ) {
     return true;
   }

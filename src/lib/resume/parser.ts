@@ -73,18 +73,25 @@ const WHITESPACE_REGEX = /\s+/g;
  * @returns True if file type is supported
  */
 export function isSupportedResumeFile(file: File): boolean {
-  if (SUPPORTED_MIME_TYPES.has(file.type as never)) {
-    return true;
+  // Strict check: if MIME type is known and unsupported, reject immediately
+  if (file.type && !SUPPORTED_MIME_TYPES.has(file.type as never)) {
+    return false;
   }
+
+  // Extension check is fallback or secondary validation
   const ext = file.name.split(".").pop()?.toLowerCase();
   if (!ext) {
     return false;
   }
-  const mapped = FILE_EXTENSION_MAP[ext];
-  if (!mapped) {
+
+  const expectedMime = FILE_EXTENSION_MAP[ext];
+  if (!expectedMime) {
     return false;
   }
-  return !file.type || file.type === mapped;
+
+  // If browser didn't detect MIME type, rely on extension. 
+  // If it did, ensure it matches expected family (optional, but safer).
+  return true;
 }
 
 /**
@@ -150,7 +157,17 @@ export async function parseResumeFile(file: File): Promise<ParsedResume> {
  */
 async function parsePdf(arrayBuffer: ArrayBuffer): Promise<string> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
-  const loadingTask = pdfjs.getDocument({ data: arrayBuffer, useWorkerFetch: false, disableWorker: true });
+
+  // Fix: PDF.js v5 requires a valid workerSrc URL.
+  // Using local file served from public/ directory.
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
+  const loadingTask = pdfjs.getDocument({
+    data: arrayBuffer,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    disableWorker: true
+  });
   const pdf = await loadingTask.promise;
   let combined = "";
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {

@@ -52,7 +52,8 @@ import {
   type StoredToolInvocation,
 } from "@/lib/chat/storage";
 import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
-import { getProfile, isContextEnabled } from "@/lib/resume/storage";
+import { getProfile, isContextEnabled, saveProfile, canUpload, recordUpload, setContextEnabled } from "@/lib/resume/storage";
+import { parseResumeFile } from "@/lib/resume/parser";
 import type { ToolAwareMessage, ToolInvocationState } from "@/lib/chat/tooling";
 import type { Job } from "@/lib/jobs/types";
 
@@ -352,6 +353,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const resumeContextRef = useRef<PendingRequest["body"]["resumeContext"]>(null);
 
   // Load resume context when in Navigator mode and context is enabled
+  // Also refresh periodically to catch new uploads
   useEffect(() => {
     const loadResumeContext = async () => {
       // Load resume context for BOTH modes when toggle is ON
@@ -378,6 +380,10 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     };
 
     loadResumeContext();
+
+    // Poll every 3 seconds to catch new uploads (mirrors ResumeToggle behavior)
+    const interval = setInterval(loadResumeContext, 3000);
+    return () => clearInterval(interval);
   }, [mode]);
 
   useEffect(() => {
@@ -1185,6 +1191,73 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
             conversationId: session.conversation.id,
           });
           continue;
+        }
+
+        // Resume Interception: PDF handling
+        // If file is PDF, treat it as a Resume Upload because normal attachments block PDF.
+        if (file.type === "application/pdf") {
+          // Check limits
+          const allowedIdx = await canUpload();
+          if (!allowedIdx) {
+            errorMessage = "Resume upload limit reached (3/day).";
+            setComposerError(errorMessage);
+            continue;
+          }
+
+          // Create temporary "Extracting" preview
+          const rId = nanoid(8);
+          const resumePreview: AttachmentPreview = {
+            id: rId,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            status: "uploading",
+            isLocalOnly: true, // Mark as local so it doesn't try to sync to message history as valid attachment
+          };
+          // We overload the 'isLocalOnly' status to show "Stored locally (resume)" in UI (see ChatComposer logic)
+
+          setAttachments((prev) => [...prev, resumePreview]);
+
+          // Process Async
+          (async () => {
+            try {
+              // Parse
+              const parsed = await parseResumeFile(file);
+              // Extract
+              const response = await fetch("/api/resume/extract", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ rawText: parsed.text }),
+              });
+
+              if (!response.ok) throw new Error("Extraction failed");
+              const data = await response.json();
+              if (!data.success || !data.profile) throw new Error(data.error);
+
+              // Save
+              await saveProfile(data.profile);
+              await recordUpload(file.name);
+              await setContextEnabled(true);
+
+              // Update the preview to show success
+              // We use isLocalOnly=true so it displays "Stored locally (resume)" and Check icon
+              setAttachments((prev) => prev.map(a =>
+                a.id === rId
+                  ? { ...a, status: "uploaded", isLocalOnly: true }
+                  : a
+              ));
+
+            } catch (err) {
+              console.error("Auto-resume upload failed:", err);
+              setAttachments((prev) => prev.map(a =>
+                a.id === rId
+                  ? { ...a, status: "error", error: "Resume extraction failed" }
+                  : a
+              ));
+            }
+          })();
+
+          continue; // Skip standard attachment upload
         }
 
         if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {

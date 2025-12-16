@@ -1243,7 +1243,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
               // We use isLocalOnly=true so it displays "Stored locally (resume)" and Check icon
               setAttachments((prev) => prev.map(a =>
                 a.id === rId
-                  ? { ...a, status: "uploaded", isLocalOnly: true }
+                  ? { ...a, status: "ready" as const, isLocalOnly: true }
                   : a
               ));
 

@@ -1,6 +1,6 @@
 /**
  * Message List Component
- * 
+ *
  * Renders the chronological list of chat messages.
  * Features:
  * - Message bubbles (User/Assistant) using Markdown
@@ -8,26 +8,41 @@
  * - Loading indicators/animations for different tool states
  * - Inline suggestions for follow-up questions
  * - Rendering of "Chips" for documents and job context
- * 
+ *
  * @module components/chat/MessageList
  * @see {@link ./LottieAnimations.tsx} for loading states
  */
 
 "use client";
 
+import clsx from "clsx";
+import {
+  Bot,
+  Briefcase,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  RefreshCw,
+  User,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, FileText, User, RefreshCw, Briefcase, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import clsx from "clsx";
 
+import {
+  type CanvasDocument,
+  DOCUMENT_TOOL_NAME,
+  isGeneratedDocument,
+} from "@/lib/canvas/documents";
 import type { ToolAwareMessage } from "@/lib/chat/tooling";
 import type { ChatSuggestion } from "@/lib/chat/types";
-import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
 import { JOB_SEARCH_TOOL_NAME } from "@/lib/jobs/tools";
+import type { Job, JobResponse } from "@/lib/jobs/types";
 import { JobList } from "./JobCard";
-import type { JobResponse, Job } from "@/lib/jobs/types";
-import { DocumentGeneratingAnimation, JobSearchingAnimation } from "./LottieAnimations";
+import {
+  DocumentGeneratingAnimation,
+  JobSearchingAnimation,
+} from "./LottieAnimations";
 
 export type MessageListProps = {
   messages: ToolAwareMessage[];
@@ -46,10 +61,22 @@ export type MessageListProps = {
 };
 
 const STARTER_QUESTIONS = [
-  { heading: "Resume Help", text: "Help me write a resume for a Football Coach position." },
-  { heading: "Interview Prep", text: "What are common interview questions for a Sports Analyst?" },
-  { heading: "Cover Letter", text: "Create a cover letter for a Gym Manager role." },
-  { heading: "Career Advice", text: "How do I transition from athlete to sports administration?" },
+  {
+    heading: "Resume Help",
+    text: "Help me write a resume for a Football Coach position.",
+  },
+  {
+    heading: "Interview Prep",
+    text: "What are common interview questions for a Sports Analyst?",
+  },
+  {
+    heading: "Cover Letter",
+    text: "Create a cover letter for a Gym Manager role.",
+  },
+  {
+    heading: "Career Advice",
+    text: "How do I transition from athlete to sports administration?",
+  },
 ];
 
 /**
@@ -79,15 +106,19 @@ export function MessageList({
             <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
               <Bot className="h-6 w-6 text-slate-500" />
             </div>
-            <h3 className="text-lg font-semibold text-slate-900">How can I help you today?</h3>
+            <h3 className="text-lg font-semibold text-slate-900">
+              How can I help you today?
+            </h3>
             <p className="text-sm text-slate-500 max-w-md">
-              Ask anything about sports careers, resumes, or interview prep. Attach supporting files for richer responses.
+              Ask anything about sports careers, resumes, or interview prep.
+              Attach supporting files for richer responses.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
             {STARTER_QUESTIONS.map((q, i) => (
               <button
+                type="button"
                 key={i}
                 onClick={() => handleStarter?.(q.text)}
                 disabled={isLimitReached}
@@ -95,13 +126,25 @@ export function MessageList({
                   "text-left p-4 rounded-xl border transition-all group starter-card",
                   isLimitReached
                     ? "border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed"
-                    : "border-slate-200 bg-white"
+                    : "border-slate-200 bg-white",
                 )}
               >
-                <div className={clsx("font-medium text-sm mb-1", isLimitReached ? "text-slate-400" : "text-slate-900")}>
+                <div
+                  className={clsx(
+                    "font-medium text-sm mb-1",
+                    isLimitReached ? "text-slate-400" : "text-slate-900",
+                  )}
+                >
                   {q.heading}
                 </div>
-                <div className={clsx("text-xs", isLimitReached ? "text-slate-400" : "text-slate-500 group-hover:text-slate-600")}>
+                <div
+                  className={clsx(
+                    "text-xs",
+                    isLimitReached
+                      ? "text-slate-400"
+                      : "text-slate-500 group-hover:text-slate-600",
+                  )}
+                >
                   {q.text}
                 </div>
               </button>
@@ -111,7 +154,9 @@ export function MessageList({
       )}
       {messages.map((message, index) => {
         const isAssistantStreaming =
-          isStreaming && index === messages.length - 1 && message.role === "assistant";
+          isStreaming &&
+          index === messages.length - 1 &&
+          message.role === "assistant";
 
         const suggestions = suggestionsByMessage[message.id] ?? [];
 
@@ -154,35 +199,47 @@ export function MessageList({
       )}
 
       {/* Only show generic generating indicator when NO special tool animation is showing */}
-      {isStreaming && (() => {
-        const lastMessage = messages[messages.length - 1];
-        if (!lastMessage || lastMessage.role !== "assistant") return true;
+      {isStreaming &&
+        (() => {
+          const lastMessage = messages[messages.length - 1];
+          if (!lastMessage || lastMessage.role !== "assistant") return true;
 
-        const hasSpecialTool = lastMessage.parts?.some(part => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const p = part as any;
+          const hasSpecialTool = lastMessage.parts?.some((part) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const p = part as any;
 
-          // Check for tool-invocation type
-          if (p.type === "tool-invocation") {
-            const toolName = p.toolInvocation?.toolName;
-            return toolName === DOCUMENT_TOOL_NAME || toolName === JOB_SEARCH_TOOL_NAME;
-          }
+            // Check for tool-invocation type
+            if (p.type === "tool-invocation") {
+              const toolName = p.toolInvocation?.toolName;
+              return (
+                toolName === DOCUMENT_TOOL_NAME ||
+                toolName === JOB_SEARCH_TOOL_NAME
+              );
+            }
 
-          // Check for direct tool part types
-          if (p.type === `tool-${DOCUMENT_TOOL_NAME}` || p.type === `tool-${JOB_SEARCH_TOOL_NAME}`) {
-            return true;
-          }
+            // Check for direct tool part types
+            if (
+              p.type === `tool-${DOCUMENT_TOOL_NAME}` ||
+              p.type === `tool-${JOB_SEARCH_TOOL_NAME}`
+            ) {
+              return true;
+            }
 
-          return false;
-        });
+            return false;
+          });
 
-        return !hasSpecialTool;
-      })() && <GeneratingIndicator />}
+          return !hasSpecialTool;
+        })() && <GeneratingIndicator />}
     </div>
   );
 }
 
-const GENERATING_PHRASES = ["Thinking", "Analyzing", "Crafting response", "Almost there"];
+const GENERATING_PHRASES = [
+  "Thinking",
+  "Analyzing",
+  "Crafting response",
+  "Almost there",
+];
 
 /**
  * Animated indicator shown while the AI is generating a response.
@@ -225,11 +282,19 @@ type MessageBubbleProps = {
  * Individual message bubble component.
  * Renders text content and document chips based on message parts.
  */
-function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingAssistant = false, onSelectJob }: MessageBubbleProps) {
+function MessageBubble({
+  message,
+  onSelectDocument,
+  documentLookup,
+  isStreamingAssistant = false,
+  onSelectJob,
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   return (
-    <div className={clsx("flex gap-4", isUser ? "justify-end" : "justify-start")}>
+    <div
+      className={clsx("flex gap-4", isUser ? "justify-end" : "justify-start")}
+    >
       {!isUser && (
         <div className="shrink-0 mt-1 h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
           <Bot className="h-5 w-5" />
@@ -240,11 +305,11 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
           "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed flex flex-col gap-2 message-enter",
           isUser
             ? "bg-[#006dff] text-white rounded-br-sm user-message-glow"
-            : "assistant-message text-slate-900"
+            : "assistant-message text-slate-900",
         )}
       >
         {message.parts.map((part, index) => {
-          if (part.type === 'text') {
+          if (part.type === "text") {
             if (part.text.startsWith(":::resume-meta")) {
               return null;
             }
@@ -255,7 +320,12 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
               return <JobContextChip key={index} text={part.text} />;
             }
             return (
-              <MarkdownContent key={index} text={part.text} isUser={isUser} isStreaming={isStreamingAssistant} />
+              <MarkdownContent
+                key={index}
+                text={part.text}
+                isUser={isUser}
+                isStreaming={isStreamingAssistant}
+              />
             );
           }
 
@@ -266,12 +336,18 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
             const p = part as any;
             const docOutput = p.output || p.toolInvocation?.result;
             const toolCallId = p.toolCallId || p.toolInvocation?.toolCallId;
-            const docFromLookup = toolCallId ? documentLookup[toolCallId] : undefined;
-            const docFromOutput = isGeneratedDocument(docOutput) ? docOutput : undefined;
+            const docFromLookup = toolCallId
+              ? documentLookup[toolCallId]
+              : undefined;
+            const docFromOutput = isGeneratedDocument(docOutput)
+              ? docOutput
+              : undefined;
             const resolvedDocument = docFromLookup ?? docFromOutput;
 
             if (!resolvedDocument) {
-              return <DocumentGeneratingAnimation key={`doc-loading-${index}`} />;
+              return (
+                <DocumentGeneratingAnimation key={`doc-loading-${index}`} />
+              );
             }
 
             return (
@@ -287,7 +363,8 @@ function MessageBubble({ message, onSelectDocument, documentLookup, isStreamingA
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const p = part as any;
             // AI SDK v5 uses .output, older versions use .result
-            const output = p.output || p.toolInvocation?.output || p.toolInvocation?.result;
+            const output =
+              p.output || p.toolInvocation?.output || p.toolInvocation?.result;
             const toolCallId = p.toolCallId || p.toolInvocation?.toolCallId;
             return (
               <DelayedJobResults
@@ -324,7 +401,11 @@ type SuggestionRowProps = {
   onDismiss?: () => void;
 };
 
-function SuggestionRow({ suggestions, onSuggestionClick, onDismiss }: SuggestionRowProps) {
+function SuggestionRow({
+  suggestions,
+  onSuggestionClick,
+  onDismiss,
+}: SuggestionRowProps) {
   return (
     <div className="flex flex-wrap gap-2 pl-12 animate-in fade-in duration-300">
       {suggestions.map((suggestion) => (
@@ -357,7 +438,7 @@ type DocumentChipProps = {
 function DocumentChip({ document, onSelectDocument }: DocumentChipProps) {
   if (!document) return null;
   const readableType = document.type.replace(/_/g, " ");
-  const isResume = readableType.toLowerCase().includes('resume');
+  const isResume = readableType.toLowerCase().includes("resume");
   const label = isResume ? `View generated ${readableType}` : "View document";
 
   return (
@@ -379,7 +460,9 @@ function JobContextChip({ text }: { text: string }) {
   return (
     <div className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 w-fit mb-2">
       <Briefcase className="h-3.5 w-3.5" />
-      <span>Asking about: {data.title} at {data.employer}</span>
+      <span>
+        Asking about: {data.title} at {data.employer}
+      </span>
     </div>
   );
 }
@@ -396,8 +479,6 @@ function extractJobContext(text: string) {
     return null;
   }
 }
-
-
 
 type DelayedJobResultsProps = {
   output: JobResponse | null;
@@ -432,7 +513,11 @@ function ResumeContextChip({ text }: { text: string }) {
       >
         <FileText className="h-3.5 w-3.5 text-[#006dff]" />
         <span>Resume context • {data.fileName}</span>
-        {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        {isOpen ? (
+          <ChevronUp className="h-3 w-3" />
+        ) : (
+          <ChevronDown className="h-3 w-3" />
+        )}
       </button>
       {isOpen && (
         <div className="mt-3 space-y-2">
@@ -441,13 +526,17 @@ function ResumeContextChip({ text }: { text: string }) {
           </p>
           {data.summary && (
             <p className="text-[11px] text-slate-600">
-              <span className="font-semibold text-slate-700">Summary:</span> {data.summary}
+              <span className="font-semibold text-slate-700">Summary:</span>{" "}
+              {data.summary}
             </p>
           )}
           {Array.isArray(data.strengths) && data.strengths.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {data.strengths.map((skill: string) => (
-                <span key={skill} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                <span
+                  key={skill}
+                  className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600"
+                >
                   {skill}
                 </span>
               ))}
@@ -488,7 +577,8 @@ function isToolInProgress(part: unknown, toolName: string): boolean {
   if (
     p.type === "tool-invocation" &&
     p.toolInvocation?.toolName === toolName &&
-    (p.toolInvocation?.state === "call" || p.toolInvocation?.state === "partial-call")
+    (p.toolInvocation?.state === "call" ||
+      p.toolInvocation?.state === "partial-call")
   ) {
     return true;
   }
@@ -554,7 +644,11 @@ type MarkdownContentProps = {
   isStreaming?: boolean;
 };
 
-function MarkdownContent({ text, isUser, isStreaming = false }: MarkdownContentProps) {
+function MarkdownContent({
+  text,
+  isUser,
+  isStreaming = false,
+}: MarkdownContentProps) {
   const components = useMemo(() => getMarkdownComponents(isUser), [isUser]);
   const normalizedText = useMemo(() => normalizeMarkdown(text), [text]);
   const [displayText, setDisplayText] = useState(normalizedText);
@@ -606,7 +700,12 @@ function MarkdownContent({ text, isUser, isStreaming = false }: MarkdownContentP
   }, [normalizedText, isStreaming]);
 
   return (
-    <div className={clsx("chat-markdown text-sm leading-relaxed", isUser ? "text-white" : "text-slate-900")}>
+    <div
+      className={clsx(
+        "chat-markdown text-sm leading-relaxed",
+        isUser ? "text-white" : "text-slate-900",
+      )}
+    >
       <div className={clsx(isStreaming && "animate-in fade-in duration-500")}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
           {displayText}
@@ -622,7 +721,7 @@ function MarkdownContent({ text, isUser, isStreaming = false }: MarkdownContentP
 function getMarkdownComponents(isUser: boolean): Components {
   const codeBase = clsx(
     "rounded px-1 py-0.5 text-xs font-mono",
-    isUser ? "bg-white/10 text-white" : "bg-slate-100 text-slate-900"
+    isUser ? "bg-white/10 text-white" : "bg-slate-100 text-slate-900",
   );
 
   return {
@@ -635,12 +734,7 @@ function getMarkdownComponents(isUser: boolean): Components {
     p: (props) => <p className="text-sm leading-relaxed" {...props} />,
     strong: (props) => <strong className="font-semibold" {...props} />,
     em: (props) => <em className="italic" {...props} />,
-    code: (props) => (
-      <code
-        className={codeBase}
-        {...props}
-      />
-    ),
+    code: (props) => <code className={codeBase} {...props} />,
   } satisfies Components;
 }
 
@@ -649,13 +743,17 @@ function normalizeMarkdown(input: string): string {
     return "";
   }
 
-  const normalizedNewlines = input.replace(/\r\n/g, "\n").replace(/\u00A0/g, " ");
+  const normalizedNewlines = input
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00A0/g, " ");
   const collapsed = normalizedNewlines
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]+\n/g, "\n");
 
   const needsLeadingWhitespace = collapsed.trimStart().startsWith("```");
-  const trimmed = needsLeadingWhitespace ? collapsed.trimEnd() : collapsed.trim();
+  const trimmed = needsLeadingWhitespace
+    ? collapsed.trimEnd()
+    : collapsed.trim();
 
   return trimmed;
 }

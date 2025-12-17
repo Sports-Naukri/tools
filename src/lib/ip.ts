@@ -1,27 +1,27 @@
 /**
  * Client IP Extraction Utility
- * 
+ *
  * Extracts the client's IP address from HTTP headers.
  * Used for rate limiting purposes to identify unique users.
- * 
+ *
  * Header Priority:
  * 1. X-Forwarded-For (proxy/load balancer header) - uses first IP
  * 2. X-Real-IP (common proxy header)
  * 3. Fallback to "0.0.0.0" if no headers present
- * 
+ *
  * @module lib/ip
  * @see {@link ./rateLimiter.ts} for usage in rate limiting
  */
 
 /**
  * Extracts the client IP address from request headers.
- * 
+ *
  * When behind a proxy (Vercel, Cloudflare, nginx), the actual client IP
  * is passed in headers rather than the connection IP.
- * 
+ *
  * @param headers - Standard Headers object from the request
  * @returns The client IP address, or "0.0.0.0" if not available
- * 
+ *
  * @example
  * ```ts
  * // In an API route:
@@ -48,4 +48,3 @@ export function getClientIp(headers: Headers) {
   // Fallback for local development or missing headers
   return "0.0.0.0";
 }
-

@@ -1,13 +1,13 @@
 /**
  * Rate Limit Usage Status API
- * 
+ *
  * Returns the current rate limit status for a user (identified by IP).
  * Used by the client to display remaining quota and disable inputs when limits are reached.
- * 
+ *
  * Response includes:
  * - Daily conversation limit status (resets at midnight)
  * - Per-conversation message limit status (never resets)
- * 
+ *
  * @route GET /api/chat/usage?conversationId=xxx
  * @module app/api/chat/usage/route
  */
@@ -30,7 +30,7 @@ export const preferredRegion = ["bom1", "sin1", "fra1"];
 
 /**
  * Returns current rate limit usage for the requesting IP.
- * 
+ *
  * @param req - Request with optional ?conversationId query param
  * @returns UsageSnapshot with daily and per-chat limit status
  */
@@ -46,4 +46,3 @@ export async function GET(req: Request) {
 
   return NextResponse.json(usage);
 }
-

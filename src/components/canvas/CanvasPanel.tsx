@@ -1,7 +1,7 @@
 "use client";
 
-import { Download, X } from "lucide-react";
 import clsx from "clsx";
+import { Download, X } from "lucide-react";
 
 import type { CanvasDocument } from "@/lib/canvas/documents";
 import { exportDocumentToDocx } from "@/lib/canvas/docx";
@@ -25,7 +25,7 @@ export function CanvasPanel({ document, isOpen, onClose }: CanvasPanelProps) {
         "fixed top-0 right-0 z-30 h-full transition-all duration-500 ease-in-out",
         "w-full max-w-[min(640px,50vw)]",
         isVisible ? "translate-x-0" : "translate-x-full",
-        "bg-white shadow-2xl border-l border-slate-100"
+        "bg-white shadow-2xl border-l border-slate-100",
       )}
     >
       <div className="flex h-full flex-col">
@@ -34,7 +34,9 @@ export function CanvasPanel({ document, isOpen, onClose }: CanvasPanelProps) {
             <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
               {document?.type || "Document"}
             </span>
-            <p className="text-lg font-semibold text-slate-900">{document?.title ?? "Generating artifact"}</p>
+            <p className="text-lg font-semibold text-slate-900">
+              {document?.title ?? "Generating artifact"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -60,7 +62,11 @@ export function CanvasPanel({ document, isOpen, onClose }: CanvasPanelProps) {
 
         <div className="flex-1 overflow-y-auto bg-slate-50 px-8 py-10">
           <div className="mx-auto min-h-[calc(100%-4rem)] max-w-[620px] bg-white p-10 shadow-sm">
-            {document ? <DocumentPreview document={document} /> : <DocumentSkeleton />}
+            {document ? (
+              <DocumentPreview document={document} />
+            ) : (
+              <DocumentSkeleton />
+            )}
           </div>
         </div>
       </div>
@@ -75,15 +81,34 @@ export function CanvasPanel({ document, isOpen, onClose }: CanvasPanelProps) {
 function DocumentPreview({ document }: { document: CanvasDocument }) {
   return (
     <div className="space-y-8 text-slate-700">
-      {document.title && <h1 className="text-3xl font-semibold text-slate-900">{document.title}</h1>}
+      {document.title && (
+        <h1 className="text-3xl font-semibold text-slate-900">
+          {document.title}
+        </h1>
+      )}
       {document.style && (
-        <div className="text-xs uppercase tracking-[0.3em] text-slate-400">{document.style} style</div>
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+          {document.style} style
+        </div>
       )}
       {document.content.map((section, index) => (
-        <section key={`${section.heading ?? "section"}-${index}`} className="space-y-2">
-          {section.heading && <h2 className="text-lg font-semibold text-slate-900">{section.heading}</h2>}
-          {section.meta && <p className="text-xs font-mono uppercase tracking-wide text-slate-400">{section.meta}</p>}
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{section.body}</p>
+        <section
+          key={`${section.heading ?? "section"}-${index}`}
+          className="space-y-2"
+        >
+          {section.heading && (
+            <h2 className="text-lg font-semibold text-slate-900">
+              {section.heading}
+            </h2>
+          )}
+          {section.meta && (
+            <p className="text-xs font-mono uppercase tracking-wide text-slate-400">
+              {section.meta}
+            </p>
+          )}
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+            {section.body}
+          </p>
         </section>
       ))}
     </div>

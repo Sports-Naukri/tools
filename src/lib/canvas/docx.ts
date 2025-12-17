@@ -1,14 +1,14 @@
 /**
  * DOCX Export Utility
- * 
+ *
  * Client-side generation of Microsoft Word (.docx) files from canvas documents.
  * Uses `docx` library for document construction and `file-saver` for download.
- * 
+ *
  * Features:
  * - Dynamic imports to reduce initial bundle size
  * - Maps canvas sections to Word styles (Title, Heading 1, Body)
  * - Auto-sanitizes filenames
- * 
+ *
  * @module lib/canvas/docx
  * @see {@link ./documents.ts} for document structure
  */
@@ -18,7 +18,7 @@ import type { CanvasDocument } from "./documents";
 /**
  * Exports a canvas document to a Microsoft Word (.docx) file.
  * Dynamically imports 'docx' and 'file-saver' to reduce initial bundle size.
- * 
+ *
  * @param document The document object to export
  */
 export async function exportDocumentToDocx(document: CanvasDocument | null) {
@@ -26,10 +26,8 @@ export async function exportDocumentToDocx(document: CanvasDocument | null) {
     return;
   }
 
-  const [{ Document, HeadingLevel, Packer, Paragraph, TextRun }, { saveAs }] = await Promise.all([
-    import("docx"),
-    import("file-saver"),
-  ]);
+  const [{ Document, HeadingLevel, Packer, Paragraph, TextRun }, { saveAs }] =
+    await Promise.all([import("docx"), import("file-saver")]);
 
   const children: InstanceType<typeof Paragraph>[] = [
     new Paragraph({
@@ -46,7 +44,7 @@ export async function exportDocumentToDocx(document: CanvasDocument | null) {
           text: section.heading,
           heading: HeadingLevel.HEADING_1,
           spacing: { before: 220, after: 120 },
-        })
+        }),
       );
     }
 
@@ -61,7 +59,7 @@ export async function exportDocumentToDocx(document: CanvasDocument | null) {
               size: 20,
             }),
           ],
-        })
+        }),
       );
     }
 
@@ -73,7 +71,7 @@ export async function exportDocumentToDocx(document: CanvasDocument | null) {
           new Paragraph({
             text: line,
             spacing: { after: 100 },
-          })
+          }),
         );
       });
   });

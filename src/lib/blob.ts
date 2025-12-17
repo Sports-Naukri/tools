@@ -1,14 +1,14 @@
 /**
  * Local File Storage
- * 
+ *
  * Handles file uploads using local filesystem storage.
  * Files are stored in the public/uploads directory and served statically.
- * 
+ *
  * @module lib/blob
  */
 
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export type BlobUploadParams = {
   fileName: string;
@@ -27,17 +27,17 @@ export class BlobConfigError extends Error {
 /**
  * Uploads a file to local storage.
  * Files are stored in public/uploads and served statically.
- * 
+ *
  * @param params - Upload parameters
  * @returns Object with URL, pathname, and size
  */
 export async function uploadToBlob({
   fileName,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  contentType,
+  contentType: _contentType,
   data,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  access = "public",
+  access: _access = "public",
 }: BlobUploadParams) {
   // Ensure uploads directory exists
   const uploadsDir = join(process.cwd(), "public", "uploads");
@@ -58,4 +58,3 @@ export async function uploadToBlob({
     size: buffer.byteLength,
   };
 }
-

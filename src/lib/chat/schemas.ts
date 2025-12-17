@@ -1,14 +1,14 @@
 /**
  * Chat API Request/Response Schemas
- * 
+ *
  * Zod validation schemas for API request/response payloads.
  * These schemas provide runtime validation and TypeScript type inference.
- * 
+ *
  * Key schemas:
  * - chatRequestSchema: Main chat API request validation
  * - attachmentSchema: File attachment validation
  * - uploadResponseSchema: Upload API response format
- * 
+ *
  * @module lib/chat/schemas
  * @see {@link ../../app/api/chat/route.ts} for usage in API routes
  * @see {@link https://zod.dev} for Zod documentation
@@ -61,7 +61,11 @@ const filePartSchema = z.object({
  * Union schema for any message part type.
  * Allows text, file, or generic object parts for extensibility.
  */
-const genericPartSchema = z.union([textPartSchema, filePartSchema, z.record(z.any())]);
+const genericPartSchema = z.union([
+  textPartSchema,
+  filePartSchema,
+  z.record(z.any()),
+]);
 
 // ============================================================================
 // Message Schema
@@ -86,10 +90,10 @@ const messageSchema = z.object({
 
 /**
  * Main schema for validating chat API requests.
- * 
+ *
  * This is the primary validation schema used by POST /api/chat.
  * All chat requests must conform to this schema.
- * 
+ *
  * @property conversationId - Unique conversation identifier (min 4 chars)
  * @property isNewConversation - True if this is the first message
  * @property modelId - AI model to use (e.g., "standard")
@@ -112,15 +116,21 @@ export const chatRequestSchema = z.object({
    * Sent when the user has uploaded a resume and the toggle is ON.
    * Contains extracted profile data, NOT the raw resume text.
    */
-  resumeContext: z.object({
-    name: z.string().nullish(),
-    skills: z.array(z.string()),
-    summary: z.string().nullish(),
-    experience: z.array(z.object({
-      title: z.string(),
-      company: z.string(),
-    })).optional(),
-  }).nullish(),
+  resumeContext: z
+    .object({
+      name: z.string().nullish(),
+      skills: z.array(z.string()),
+      summary: z.string().nullish(),
+      experience: z
+        .array(
+          z.object({
+            title: z.string(),
+            company: z.string(),
+          }),
+        )
+        .optional(),
+    })
+    .nullish(),
 });
 
 /** TypeScript type inferred from the chat request schema */
@@ -141,4 +151,3 @@ export const uploadResponseSchema = z.object({
   type: z.string(),
   url: z.string().url(),
 });
-

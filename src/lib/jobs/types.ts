@@ -1,15 +1,15 @@
 /**
  * Job Search Type Definitions
- * 
+ *
  * TypeScript types for the job search system. Includes:
  * - Job data structures from WordPress API
  * - Filter and response types
  * - Relevance scoring for resume matching
  * - Telemetry tracking
- * 
+ *
  * The job data comes from the SportsNaukri WordPress site and is
  * transformed from WordPress custom post types to clean interfaces.
- * 
+ *
  * @module lib/jobs/types
  * @see {@link ./service.ts} for job fetching implementation
  */
@@ -171,7 +171,7 @@ export interface JobSearchTelemetryContext {
 /**
  * Raw job data from WordPress REST API.
  * This is the raw format before transformation to the clean `Job` type.
- * 
+ *
  * WordPress uses custom meta fields (_job_*) to store job-specific data.
  */
 export interface WPJob {
@@ -211,4 +211,3 @@ export interface WPJob {
     _job_max_salary?: string;
   };
 }
-

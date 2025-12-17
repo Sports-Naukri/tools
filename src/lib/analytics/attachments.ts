@@ -1,13 +1,16 @@
 /**
  * Attachment Analytics
- * 
+ *
  * Utilities for logging file upload failures and stats.
  * Uses `navigator.sendBeacon` for reliable transmission during unload/errors.
- * 
+ *
  * @module lib/analytics/attachments
  */
 
-type AttachmentFailureSource = "client_validation" | "upload_error" | "uploads_disabled";
+type AttachmentFailureSource =
+  | "client_validation"
+  | "upload_error"
+  | "uploads_disabled";
 
 export type AttachmentFailureEvent = {
   attachmentId?: string;
@@ -47,7 +50,9 @@ export function logAttachmentFailure(event: AttachmentFailureEvent) {
   const endpoint = process.env.NEXT_PUBLIC_ATTACHMENT_LOG_ENDPOINT;
   if (typeof navigator !== "undefined" && navigator.sendBeacon && endpoint) {
     try {
-      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(payload)], {
+        type: "application/json",
+      });
       navigator.sendBeacon(endpoint, blob);
       return;
     } catch (error) {

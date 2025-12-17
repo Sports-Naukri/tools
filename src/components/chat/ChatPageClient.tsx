@@ -1,6 +1,6 @@
 /**
  * Chat Page Client Orchestrator
- * 
+ *
  * Top-level client component that manages the entire chat session state.
  * Responsibilities:
  * - Session Management: Bootstrapping, loading history, new chat creation
@@ -8,34 +8,52 @@
  * - AI Integration: Hooking into `useChat` from Vercel AI SDK
  * - Tool Handling: Intercepting tool results (documents, jobs) for storage
  * - Telemetry & Analytics: Logging upload failures and usage events
- * 
+ *
  * This component coordinates the Sidebar, MessageList, Composer, and CanvasPanel.
- * 
+ *
  * @module components/chat/ChatPageClient
  * @see {@link ../../lib/chat/storage.ts} for persistence logic
  */
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { useChat, type UIMessage } from "@ai-sdk/react";
+import { type UIMessage, useChat } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { nanoid } from "nanoid";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { CanvasPanel } from "@/components/canvas/CanvasPanel";
 import { ChatComposer, type ChatMode } from "@/components/chat/ChatComposer";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { MessageList } from "@/components/chat/MessageList";
-// Resume skill mapping temporarily disabled for redesign
-import { DEFAULT_CHAT_MODEL_ID, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
 import { logAttachmentFailure } from "@/lib/analytics/attachments";
 import {
-  ALLOWED_ATTACHMENT_TYPES,
-  MAX_ATTACHMENT_FILE_SIZE,
-  MAX_ATTACHMENTS_PER_MESSAGE,
-} from "@/lib/chat/attachments";
-import type { AttachmentPreview, ChatSuggestion, UsageSnapshot } from "@/lib/chat/types";
+  type CanvasDocument,
+  DOCUMENT_TOOL_NAME,
+  isGeneratedDocument,
+} from "@/lib/canvas/documents";
 import {
+  ALLOWED_ATTACHMENT_TYPES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_ATTACHMENT_FILE_SIZE,
+} from "@/lib/chat/attachments";
+// Resume skill mapping temporarily disabled for redesign
+import {
+  DEFAULT_CHAT_MODEL_ID,
+  FOLLOWUP_TOOL_NAME,
+} from "@/lib/chat/constants";
+import {
+  type StoredAttachment,
+  type StoredConversation,
+  type StoredMessage,
+  type StoredToolInvocation,
   createConversation,
   deleteConversation,
   getConversation,
@@ -46,24 +64,31 @@ import {
   saveMessage,
   saveUsageSnapshot,
   updateConversationMeta,
-  type StoredAttachment,
-  type StoredConversation,
-  type StoredMessage,
-  type StoredToolInvocation,
 } from "@/lib/chat/storage";
-import { DOCUMENT_TOOL_NAME, isGeneratedDocument, type CanvasDocument } from "@/lib/canvas/documents";
-import { getProfile, isContextEnabled, saveProfile, canUpload, recordUpload, setContextEnabled } from "@/lib/resume/storage";
-import { parseResumeFile } from "@/lib/resume/parser";
 import type { ToolAwareMessage, ToolInvocationState } from "@/lib/chat/tooling";
+import type {
+  AttachmentPreview,
+  ChatSuggestion,
+  UsageSnapshot,
+} from "@/lib/chat/types";
 import type { Job } from "@/lib/jobs/types";
+import { parseResumeFile } from "@/lib/resume/parser";
+import {
+  canUpload,
+  getProfile,
+  isContextEnabled,
+  recordUpload,
+  saveProfile,
+  setContextEnabled,
+} from "@/lib/resume/storage";
 
-
-
-const ATTACHMENTS_DISABLED = process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
-const DEFAULT_UPLOADS_DISABLED_MESSAGE = "File uploads are temporarily unavailable";
+const ATTACHMENTS_DISABLED =
+  process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
+const DEFAULT_UPLOADS_DISABLED_MESSAGE =
+  "File uploads are temporarily unavailable";
 // Allows hiding post-response suggestion pills without breaking starter prompts.
-const SUGGESTIONS_DISABLED = process.env.NEXT_PUBLIC_CHAT_SUGGESTIONS_DISABLED === "true";
-
+const SUGGESTIONS_DISABLED =
+  process.env.NEXT_PUBLIC_CHAT_SUGGESTIONS_DISABLED === "true";
 
 type SessionState = {
   conversation: StoredConversation;
@@ -83,12 +108,13 @@ export function ChatPageClient() {
   /**
    * Refreshes the list of conversations from local storage.
    */
-  const refreshHistory = useCallback(async (): Promise<StoredConversation[]> => {
+  const refreshHistory = useCallback(async (): Promise<
+    StoredConversation[]
+  > => {
     const conversations = await listConversations(20);
     setHistory(conversations);
     return conversations;
   }, []);
-
 
   /**
    * Loads usage statistics for the current user/conversation.
@@ -96,7 +122,9 @@ export function ChatPageClient() {
   const loadUsage = useCallback(async (conversationId?: string) => {
     const params = new URLSearchParams();
     if (conversationId) params.set("conversationId", conversationId);
-    const res = await fetch(`/api/chat/usage?${params.toString()}`, { cache: "no-store" });
+    const res = await fetch(`/api/chat/usage?${params.toString()}`, {
+      cache: "no-store",
+    });
     if (!res.ok) {
       throw new Error("Failed to load usage");
     }
@@ -111,14 +139,17 @@ export function ChatPageClient() {
   /**
    * Bootstraps the chat session by loading the latest conversation or creating a new one.
    */
-  const updateUsageForConversation = useCallback((conversationId: string, usage: UsageSnapshot) => {
-    setSession((prev) => {
-      if (!prev || prev.conversation.id !== conversationId) {
-        return prev;
-      }
-      return { ...prev, usage };
-    });
-  }, []);
+  const updateUsageForConversation = useCallback(
+    (conversationId: string, usage: UsageSnapshot) => {
+      setSession((prev) => {
+        if (!prev || prev.conversation.id !== conversationId) {
+          return prev;
+        }
+        return { ...prev, usage };
+      });
+    },
+    [],
+  );
 
   const bootstrap = useCallback(async () => {
     setIsBootstrapping(true);
@@ -139,7 +170,9 @@ export function ChatPageClient() {
       setSession({ conversation, messages, usage: cachedUsage });
       void loadUsage(conversation.id)
         .then((fresh) => updateUsageForConversation(conversation.id, fresh))
-        .catch((err) => console.error("[ChatPageClient] Failed to refresh usage", err));
+        .catch((err) =>
+          console.error("[ChatPageClient] Failed to refresh usage", err),
+        );
     }
 
     await refreshHistory();
@@ -165,7 +198,8 @@ export function ChatPageClient() {
 
   const handleSelectConversation = useCallback(
     async (conversationId: string) => {
-      if (!conversationId || conversationId === session?.conversation.id) return;
+      if (!conversationId || conversationId === session?.conversation.id)
+        return;
       const conversation = await getConversation(conversationId);
       if (!conversation) return;
       const messages = await getMessages(conversationId);
@@ -178,20 +212,25 @@ export function ChatPageClient() {
         setSession({ conversation, messages, usage: cachedUsage });
         void loadUsage(conversationId)
           .then((fresh) => updateUsageForConversation(conversationId, fresh))
-          .catch((err) => console.error("[ChatPageClient] Failed to refresh usage", err));
+          .catch((err) =>
+            console.error("[ChatPageClient] Failed to refresh usage", err),
+          );
       }
     },
-    [loadUsage, session?.conversation.id, updateUsageForConversation]
+    [loadUsage, session?.conversation.id, updateUsageForConversation],
   );
 
   const startBlankConversation = useCallback(
     async (modelId: string = DEFAULT_CHAT_MODEL_ID) => {
-      const conversation = await createEmptyConversation({ modelId, persist: false });
+      const conversation = await createEmptyConversation({
+        modelId,
+        persist: false,
+      });
       const usage = await loadUsage(conversation.id);
       setSession({ conversation, messages: [], usage });
       return conversation;
     },
-    [loadUsage]
+    [loadUsage],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -203,18 +242,30 @@ export function ChatPageClient() {
       setSession((prev) => (prev ? { ...prev, conversation: updated } : prev));
       await refreshHistory();
     },
-    [refreshHistory]
+    [refreshHistory],
   );
 
-  const handleTitleStream = useCallback((conversationId: string, newTitle: string) => {
-    setSession((prev) => {
-      if (!prev || prev.conversation.id !== conversationId) {
-        return prev;
-      }
-      return { ...prev, conversation: { ...prev.conversation, title: newTitle } };
-    });
-    setHistory((prev) => prev.map((conversation) => (conversation.id === conversationId ? { ...conversation, title: newTitle } : conversation)));
-  }, []);
+  const handleTitleStream = useCallback(
+    (conversationId: string, newTitle: string) => {
+      setSession((prev) => {
+        if (!prev || prev.conversation.id !== conversationId) {
+          return prev;
+        }
+        return {
+          ...prev,
+          conversation: { ...prev.conversation, title: newTitle },
+        };
+      });
+      setHistory((prev) =>
+        prev.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, title: newTitle }
+            : conversation,
+        ),
+      );
+    },
+    [],
+  );
 
   const handleDeleteConversation = useCallback(
     async (conversationId: string) => {
@@ -231,16 +282,30 @@ export function ChatPageClient() {
           const usage = await loadUsage(nextConversation.id);
           setSession({ conversation: nextConversation, messages, usage });
         } else {
-          setSession({ conversation: nextConversation, messages, usage: cachedUsage });
+          setSession({
+            conversation: nextConversation,
+            messages,
+            usage: cachedUsage,
+          });
           void loadUsage(nextConversation.id)
-            .then((fresh) => updateUsageForConversation(nextConversation.id, fresh))
-            .catch((err) => console.error("[ChatPageClient] Failed to refresh usage", err));
+            .then((fresh) =>
+              updateUsageForConversation(nextConversation.id, fresh),
+            )
+            .catch((err) =>
+              console.error("[ChatPageClient] Failed to refresh usage", err),
+            );
         }
       } else {
         await startBlankConversation(DEFAULT_CHAT_MODEL_ID);
       }
     },
-    [loadUsage, refreshHistory, session?.conversation.id, startBlankConversation, updateUsageForConversation]
+    [
+      loadUsage,
+      refreshHistory,
+      session?.conversation.id,
+      startBlankConversation,
+      updateUsageForConversation,
+    ],
   );
 
   if (isBootstrapping || !session) {
@@ -250,7 +315,8 @@ export function ChatPageClient() {
           <p className="text-sm text-red-500">{error}</p>
         ) : (
           <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-600">
-            <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> Preparing chat…
+            <Loader2 className="h-4 w-4 animate-spin text-slate-500" />{" "}
+            Preparing chat…
           </div>
         )}
       </div>
@@ -270,7 +336,9 @@ export function ChatPageClient() {
       <ChatWorkspace
         key={session.conversation.id}
         session={session}
-        onUsageChange={(usage) => setSession((prev) => (prev ? { ...prev, usage } : prev))}
+        onUsageChange={(usage) =>
+          setSession((prev) => (prev ? { ...prev, usage } : prev))
+        }
         onConversationUpdate={handleConversationUpdate}
         onTitleStream={handleTitleStream}
         loadUsage={loadUsage}
@@ -318,14 +386,22 @@ type PendingRequest = {
   };
 };
 
-
-
 /**
  * Component responsible for the active chat interface.
  * Manages the message list, composer, and canvas panel.
  */
-function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleStream, loadUsage, refreshHistory, onNewChat }: ChatWorkspaceProps) {
-  const [modelId, setModelId] = useState(session.conversation.modelId || DEFAULT_CHAT_MODEL_ID);
+function ChatWorkspace({
+  session,
+  onUsageChange,
+  onConversationUpdate,
+  onTitleStream,
+  loadUsage,
+  refreshHistory,
+  onNewChat,
+}: ChatWorkspaceProps) {
+  const [modelId, setModelId] = useState(
+    session.conversation.modelId || DEFAULT_CHAT_MODEL_ID,
+  );
 
   // Mode state with sessionStorage persistence
   const [mode, setMode] = useState<ChatMode>(() => {
@@ -343,14 +419,17 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
-  const [uploadsDisabledMessage, setUploadsDisabledMessage] = useState<string | null>(
-    ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null
-  );
-  const [suggestionsByMessage, setSuggestionsByMessage] = useState<Record<string, ChatSuggestion[]>>({});
+  const [uploadsDisabledMessage, setUploadsDisabledMessage] = useState<
+    string | null
+  >(ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null);
+  const [suggestionsByMessage, setSuggestionsByMessage] = useState<
+    Record<string, ChatSuggestion[]>
+  >({});
 
   // Resume context for Navigator mode (Phase 5)
   // Stores the profile data to send with chat requests when toggle is ON
-  const resumeContextRef = useRef<PendingRequest["body"]["resumeContext"]>(null);
+  const resumeContextRef =
+    useRef<PendingRequest["body"]["resumeContext"]>(null);
 
   // Load resume context when in Navigator mode and context is enabled
   // Also refresh periodically to catch new uploads
@@ -374,9 +453,14 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         name: profile.name,
         skills: profile.skills,
         summary: profile.summary,
-        experience: profile.experience?.map(e => ({ title: e.title, company: e.company })),
+        experience: profile.experience?.map((e) => ({
+          title: e.title,
+          company: e.company,
+        })),
       };
-      console.log(`📋 [Resume Context] Loaded: ${profile.skills.length} skills for ${mode} mode`);
+      console.log(
+        `📋 [Resume Context] Loaded: ${profile.skills.length} skills for ${mode} mode`,
+      );
     };
 
     loadResumeContext();
@@ -393,8 +477,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     setSuggestionsByMessage({});
   }, []);
   const attachmentFilesRef = useRef<Map<string, File>>(new Map());
-  const hasUploadingAttachments = attachments.some((attachment) => attachment.status === "uploading");
-  const hasErroredAttachments = attachments.some((attachment) => attachment.status === "error");
+  const hasUploadingAttachments = attachments.some(
+    (attachment) => attachment.status === "uploading",
+  );
+  const hasErroredAttachments = attachments.some(
+    (attachment) => attachment.status === "error",
+  );
   const [input, setInput] = useState("");
 
   // True when the last request failed and the user can retry it inline.
@@ -402,6 +490,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
 
   // Keep the "is new conversation" flag in sync when the active conversation changes so rate limits stay accurate.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: session.conversation properties are sufficient
   useEffect(() => {
     hasStartedRef.current = session.conversation.messageCount > 0;
   }, [session.conversation.id, session.conversation.messageCount]);
@@ -409,16 +498,27 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
   // Track persisted snapshots to avoid unnecessary writes to storage
   const persistedMessageSnapshots = useRef(
-    new Map(session.messages.map((message) => [message.id, buildStoredMessageSnapshot(message)]))
+    new Map(
+      session.messages.map((message) => [
+        message.id,
+        buildStoredMessageSnapshot(message),
+      ]),
+    ),
   );
 
   const initialMessages = useMemo<ToolAwareMessage[]>(
-    () => session.messages.map(convertStoredMessageToUIMessage) as ToolAwareMessage[],
-    [session.messages]
+    () =>
+      session.messages.map(
+        convertStoredMessageToUIMessage,
+      ) as ToolAwareMessage[],
+    [session.messages],
   );
 
   const readyAttachments = attachments.filter(
-    (attachment) => attachment.status === "ready" && typeof attachment.url === "string" && !attachment.isLocalOnly
+    (attachment) =>
+      attachment.status === "ready" &&
+      typeof attachment.url === "string" &&
+      !attachment.isLocalOnly,
   );
 
   const uploadAttachment = useCallback(
@@ -435,19 +535,29 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         const payload = await res.json().catch(() => null);
         if (!res.ok || !payload) {
           const serverMessage =
-            (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string")
+            payload &&
+            typeof payload === "object" &&
+            "error" in payload &&
+            typeof payload.error === "string"
               ? payload.error
               : "Upload failed";
           const serverCode =
-            payload && typeof payload === "object" && "code" in payload && typeof payload.code === "string"
+            payload &&
+            typeof payload === "object" &&
+            "code" in payload &&
+            typeof payload.code === "string"
               ? payload.code
               : undefined;
 
           lastServerCode = serverCode;
-          const isConfigError = serverCode === "blob_token_missing" || serverCode === "uploads_disabled";
+          const isConfigError =
+            serverCode === "blob_token_missing" ||
+            serverCode === "uploads_disabled";
 
           if (isConfigError) {
-            setUploadsDisabledMessage(serverMessage || DEFAULT_UPLOADS_DISABLED_MESSAGE);
+            setUploadsDisabledMessage(
+              serverMessage || DEFAULT_UPLOADS_DISABLED_MESSAGE,
+            );
           }
 
           logAttachmentFailure({
@@ -463,23 +573,37 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           throw new Error(serverMessage || "Upload failed");
         }
 
-        const data = payload as { url?: string; name?: string; size?: number; type?: string };
+        const data = payload as {
+          url?: string;
+          name?: string;
+          size?: number;
+          type?: string;
+        };
         if (!data.url) {
           throw new Error("Upload response missing file URL");
         }
         attachmentFilesRef.current.delete(attachmentId);
         setAttachments((prev) =>
-          prev.map((item) => (item.id === attachmentId ? { ...item, url: data.url, status: "ready" } : item))
+          prev.map((item) =>
+            item.id === attachmentId
+              ? { ...item, url: data.url, status: "ready" }
+              : item,
+          ),
         );
       } catch (uploadError) {
-        const uploadMessage = uploadError instanceof Error ? uploadError.message : "Upload failed";
-        const isConfigError = lastServerCode === "blob_token_missing" || lastServerCode === "uploads_disabled";
+        const uploadMessage =
+          uploadError instanceof Error ? uploadError.message : "Upload failed";
+        const isConfigError =
+          lastServerCode === "blob_token_missing" ||
+          lastServerCode === "uploads_disabled";
         const errorCode = lastServerCode;
         const attachmentError = isConfigError ? undefined : uploadMessage;
         setAttachments((prev) =>
           prev.map((item) =>
-            item.id === attachmentId ? { ...item, status: "error", error: attachmentError } : item
-          )
+            item.id === attachmentId
+              ? { ...item, status: "error", error: attachmentError }
+              : item,
+          ),
         );
         if (isConfigError) {
           setComposerError(null);
@@ -499,7 +623,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         lastServerCode = undefined;
       }
     },
-    [session.conversation.id]
+    [session.conversation.id],
   );
 
   // Holds the most recent outbound request until it succeeds.
@@ -525,207 +649,285 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
   const messagesRef = useRef<ToolAwareMessage[]>([]);
 
-  const generateTitle = useCallback(async (messageContent: string, modelId: string) => {
-    try {
-      const res = await fetch("/api/chat/title", {
-        method: "POST",
-        body: JSON.stringify({ message: messageContent, modelId }),
-      });
-      if (!res.ok) return deriveTitle(messageContent);
-      const data = await res.json();
-      return data.title as string;
-    } catch (error) {
-      console.error("Failed to generate title:", error);
-      return deriveTitle(messageContent);
-    }
-  }, []);
+  const generateTitle = useCallback(
+    async (messageContent: string, modelId: string) => {
+      try {
+        const res = await fetch("/api/chat/title", {
+          method: "POST",
+          body: JSON.stringify({ message: messageContent, modelId }),
+        });
+        if (!res.ok) return deriveTitle(messageContent);
+        const data = await res.json();
+        return data.title as string;
+      } catch (error) {
+        console.error("Failed to generate title:", error);
+        return deriveTitle(messageContent);
+      }
+    },
+    [],
+  );
 
   // Persist messages only after the assistant responds successfully.
-  const handleFinish = useCallback(async (completedMessage?: ToolAwareMessage) => {
-    let currentMessages = messagesRef.current;
+  const handleFinish = useCallback(
+    async (completedMessage?: ToolAwareMessage) => {
+      let currentMessages = messagesRef.current;
 
-    // Ensure we have the latest content for the completed message
-    if (completedMessage) {
-      const last = currentMessages[currentMessages.length - 1];
-      if (last && last.id === completedMessage.id) {
-        // Replace with the authoritative completed message
-        currentMessages = [...currentMessages.slice(0, -1), completedMessage];
-      } else if (last && last.role === "user") {
-        // If the ref hasn't updated yet to include the assistant message
-        currentMessages = [...currentMessages, completedMessage];
+      // Ensure we have the latest content for the completed message
+      if (completedMessage) {
+        const last = currentMessages[currentMessages.length - 1];
+        if (last && last.id === completedMessage.id) {
+          // Replace with the authoritative completed message
+          currentMessages = [...currentMessages.slice(0, -1), completedMessage];
+        } else if (last && last.role === "user") {
+          // If the ref hasn't updated yet to include the assistant message
+          currentMessages = [...currentMessages, completedMessage];
+        }
       }
-    }
 
-    const candidates = currentMessages.filter((message) => isSupportedRole(message.role));
+      const candidates = currentMessages.filter((message) =>
+        isSupportedRole(message.role),
+      );
 
-    // Identify messages that need to be saved (changed content or new documents)
-    const pendingSaves = candidates
-      .map((message) => {
-        const normalizedContent = getTextContent(message);
-        const documents = extractDocumentsFromMessage(message);
-        const toolInvocations = message.toolInvocations?.map((inv): StoredToolInvocation => ({
-          state: inv.state,
-          toolCallId: inv.toolCallId,
-          toolName: inv.toolName,
-          args: inv.args,
-          result: inv.result,
-        }));
-        const clonedParts = message.parts ? cloneParts(message.parts) : undefined;
-        const attachmentsForStorage = extractAttachmentsFromMessageParts(message);
-        const snapshot = buildPersistenceSnapshot({
-          content: normalizedContent,
-          documents,
-          toolInvocations: toolInvocations ?? [],
-          parts: clonedParts,
-          attachments: attachmentsForStorage,
-        });
-        return {
-          message,
-          content: normalizedContent,
-          documents,
-          toolInvocations,
-          parts: clonedParts,
-          attachments: attachmentsForStorage,
-          snapshot,
-        };
-      })
-      .filter(({ content, documents, toolInvocations, parts, attachments }) => {
-        const hasTools = toolInvocations && toolInvocations.length > 0;
-        const hasParts = parts && parts.length > 0;
-        const hasAttachments = attachments && attachments.length > 0;
-        return content.length > 0 || documents.length > 0 || hasTools || hasParts || hasAttachments;
-      })
-      .filter(({ message, snapshot }) => persistedMessageSnapshots.current.get(message.id) !== snapshot);
+      // Identify messages that need to be saved (changed content or new documents)
+      const pendingSaves = candidates
+        .map((message) => {
+          const normalizedContent = getTextContent(message);
+          const documents = extractDocumentsFromMessage(message);
+          const toolInvocations = message.toolInvocations?.map(
+            (inv): StoredToolInvocation => ({
+              state: inv.state,
+              toolCallId: inv.toolCallId,
+              toolName: inv.toolName,
+              args: inv.args,
+              result: inv.result,
+            }),
+          );
+          const clonedParts = message.parts
+            ? cloneParts(message.parts)
+            : undefined;
+          const attachmentsForStorage =
+            extractAttachmentsFromMessageParts(message);
+          const snapshot = buildPersistenceSnapshot({
+            content: normalizedContent,
+            documents,
+            toolInvocations: toolInvocations ?? [],
+            parts: clonedParts,
+            attachments: attachmentsForStorage,
+          });
+          return {
+            message,
+            content: normalizedContent,
+            documents,
+            toolInvocations,
+            parts: clonedParts,
+            attachments: attachmentsForStorage,
+            snapshot,
+          };
+        })
+        .filter(
+          ({ content, documents, toolInvocations, parts, attachments }) => {
+            const hasTools = toolInvocations && toolInvocations.length > 0;
+            const hasParts = parts && parts.length > 0;
+            const hasAttachments = attachments && attachments.length > 0;
+            return (
+              content.length > 0 ||
+              documents.length > 0 ||
+              hasTools ||
+              hasParts ||
+              hasAttachments
+            );
+          },
+        )
+        .filter(
+          ({ message, snapshot }) =>
+            persistedMessageSnapshots.current.get(message.id) !== snapshot,
+        );
 
-    if (!pendingSaves.length) {
-      return;
-    }
+      if (!pendingSaves.length) {
+        return;
+      }
 
-    await ensureConversationPersisted();
-    let titleUpdated = false;
+      await ensureConversationPersisted();
+      let titleUpdated = false;
 
-    for (const { message, content, documents, toolInvocations, parts, attachments, snapshot } of pendingSaves) {
-      await saveMessage({
-        id: message.id,
-        conversationId: session.conversation.id,
-        role: message.role,
+      for (const {
+        message,
         content,
-        documents: documents.length ? documents.map(cloneDocument) : undefined,
+        documents,
         toolInvocations,
         parts,
-        attachments: attachments.length ? attachments : undefined,
-        createdAt: new Date().toISOString(),
-      });
-      persistedMessageSnapshots.current.set(message.id, snapshot);
+        attachments,
+        snapshot,
+      } of pendingSaves) {
+        await saveMessage({
+          id: message.id,
+          conversationId: session.conversation.id,
+          role: message.role,
+          content,
+          documents: documents.length
+            ? documents.map(cloneDocument)
+            : undefined,
+          toolInvocations,
+          parts,
+          attachments: attachments.length ? attachments : undefined,
+          createdAt: new Date().toISOString(),
+        });
+        persistedMessageSnapshots.current.set(message.id, snapshot);
 
-      // Update conversation title based on the first user message
-      // Use sessionRef to check the latest title state, avoiding stale closures
-      const currentTitle = sessionRef.current.conversation.title;
-      if (!titleUpdated && message.role === "user" && !currentTitle) {
-        const aiTitle = await generateTitle(content, session.conversation.modelId);
-        const conversationId = session.conversation.id;
+        // Update conversation title based on the first user message
+        // Use sessionRef to check the latest title state, avoiding stale closures
+        const currentTitle = sessionRef.current.conversation.title;
+        if (!titleUpdated && message.role === "user" && !currentTitle) {
+          const aiTitle = await generateTitle(
+            content,
+            session.conversation.modelId,
+          );
+          const conversationId = session.conversation.id;
 
-        // Animate the title update
-        let animatedTitle = "";
-        for (let i = 0; i < aiTitle.length; i++) {
-          animatedTitle += aiTitle[i];
-          onTitleStream(conversationId, animatedTitle);
-          await new Promise((resolve) => setTimeout(resolve, 30));
+          // Animate the title update
+          let animatedTitle = "";
+          for (let i = 0; i < aiTitle.length; i++) {
+            animatedTitle += aiTitle[i];
+            onTitleStream(conversationId, animatedTitle);
+            await new Promise((resolve) => setTimeout(resolve, 30));
+          }
+
+          const updatedConversation: StoredConversation = {
+            ...session.conversation,
+            title: aiTitle,
+          };
+          await updateConversationMeta(session.conversation.id, {
+            title: updatedConversation.title,
+          });
+          onConversationUpdate(updatedConversation);
+          titleUpdated = true;
         }
-
-        const updatedConversation: StoredConversation = {
-          ...session.conversation,
-          title: aiTitle,
-        };
-        await updateConversationMeta(session.conversation.id, { title: updatedConversation.title });
-        onConversationUpdate(updatedConversation);
-        titleUpdated = true;
       }
-    }
-  }, [ensureConversationPersisted, onConversationUpdate, onTitleStream, session.conversation, generateTitle]);
+    },
+    [
+      ensureConversationPersisted,
+      onConversationUpdate,
+      onTitleStream,
+      session.conversation,
+      generateTitle,
+    ],
+  );
 
   // Initialize the AI SDK chat hook
-  const { messages, sendMessage, status, setMessages } = useChat<ToolAwareMessage>({
-    id: session.conversation.id,
-    messages: initialMessages,
-    onError: (error) => {
-      // Detect rate limit or empty response errors and show friendly messages
-      const errorMessage = error.message || "";
-      let userMessage = errorMessage;
+  const { messages, sendMessage, status, setMessages } =
+    useChat<ToolAwareMessage>({
+      id: session.conversation.id,
+      messages: initialMessages,
+      onError: (error) => {
+        // Detect rate limit or empty response errors and show friendly messages
+        const errorMessage = error.message || "";
+        let userMessage = errorMessage;
 
-      if (errorMessage.includes("rate limit") || errorMessage.includes("Rate limit")) {
-        userMessage = "The AI is currently busy. Please wait a moment and try again.";
-      } else if (errorMessage.includes("must contain either output text or tool calls")) {
-        userMessage = "The AI couldn't respond. Please wait a few seconds and try again.";
-      } else if (errorMessage.includes("429") || errorMessage.includes("too many requests")) {
-        userMessage = "Too many requests. Please slow down and try again.";
-      }
-
-      console.warn("🔴 Chat error:", errorMessage.slice(0, 100));
-      setComposerError(userMessage);
-      // Always enable retry when an error occurs - don't check lastRequestRef
-      // because streaming errors happen after sendMessage resolves
-      setRetryAvailable(true);
-    },
-    onFinish: async ({ message }) => {
-      // Check if the message actually has content - empty content means likely error
-      const hasContent = message?.parts?.some((part) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const p = part as any;
-        // Check for text content
-        if (p.type === "text" && typeof p.text === "string" && p.text.trim().length > 0) {
-          return true;
-        }
-        // Check for tool outputs
-        if (p.type === "tool-invocation" || p.type?.startsWith("tool-")) {
-          return true;
-        }
-        return false;
-      });
-
-      if (hasContent) {
-        // Only clear pending request on successful completion with actual content
-        lastRequestRef.current = null;
-        setRetryAvailable(false);
-      } else {
-        // Message is empty or has no content - keep retry available
-        console.warn("⚠️ Chat finished but message is empty - keeping retry available");
-
-        // Remove the empty assistant message from the chat
-        if (message?.id) {
-          setMessages((prev) => prev.filter((m) => m.id !== message.id));
-          console.log("🧹 Removed empty assistant message:", message.id);
+        if (
+          errorMessage.includes("rate limit") ||
+          errorMessage.includes("Rate limit")
+        ) {
+          userMessage =
+            "The AI is currently busy. Please wait a moment and try again.";
+        } else if (
+          errorMessage.includes("must contain either output text or tool calls")
+        ) {
+          userMessage =
+            "The AI couldn't respond. Please wait a few seconds and try again.";
+        } else if (
+          errorMessage.includes("429") ||
+          errorMessage.includes("too many requests")
+        ) {
+          userMessage = "Too many requests. Please slow down and try again.";
         }
 
+        console.warn("🔴 Chat error:", errorMessage.slice(0, 100));
+        setComposerError(userMessage);
+        // Always enable retry when an error occurs - don't check lastRequestRef
+        // because streaming errors happen after sendMessage resolves
         setRetryAvailable(true);
-        setComposerError("The AI couldn't generate a response. Please try again.");
-      }
+      },
+      onFinish: async ({ message }) => {
+        // Check if the message actually has content - empty content means likely error
+        const hasContent = message?.parts?.some((part) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const p = part as any;
+          // Check for text content
+          if (
+            p.type === "text" &&
+            typeof p.text === "string" &&
+            p.text.trim().length > 0
+          ) {
+            return true;
+          }
+          // Check for tool outputs
+          if (p.type === "tool-invocation" || p.type?.startsWith("tool-")) {
+            return true;
+          }
+          return false;
+        });
 
-      hasStartedRef.current = true;
-      setAttachments([]);
+        if (hasContent) {
+          // Only clear pending request on successful completion with actual content
+          lastRequestRef.current = null;
+          setRetryAvailable(false);
+        } else {
+          // Message is empty or has no content - keep retry available
+          console.warn(
+            "⚠️ Chat finished but message is empty - keeping retry available",
+          );
 
-      // Only save conversation and fetch suggestions if we got actual content
-      if (message && hasContent) {
-        const snapshot = messagesRef.current;
-        const prev = snapshot.length >= 2 ? snapshot[snapshot.length - 2] : undefined;
-        void fetchSuggestions(message, prev);
+          // Remove the empty assistant message from the chat
+          if (message?.id) {
+            setMessages((prev) => prev.filter((m) => m.id !== message.id));
+            console.log("🧹 Removed empty assistant message:", message.id);
+          }
 
-        // Refresh usage and save message ONLY on success
-        const usagePromise = loadUsage(session.conversation.id)
-          .then(onUsageChange)
-          .catch((err) => console.error("[ChatWorkspace] failed to refresh usage on finish", err));
-        await Promise.all([usagePromise, handleFinish(message)]);
-      } else {
-        // On failure, just refresh usage to see current state (nothing was incremented server-side)
-        loadUsage(session.conversation.id)
-          .then(onUsageChange)
-          .catch((err) => console.error("[ChatWorkspace] failed to refresh usage on error", err));
-      }
-    },
-  });
+          setRetryAvailable(true);
+          setComposerError(
+            "The AI couldn't generate a response. Please try again.",
+          );
+        }
+
+        hasStartedRef.current = true;
+        setAttachments([]);
+
+        // Only save conversation and fetch suggestions if we got actual content
+        if (message && hasContent) {
+          const snapshot = messagesRef.current;
+          const prev =
+            snapshot.length >= 2 ? snapshot[snapshot.length - 2] : undefined;
+          void fetchSuggestions(message, prev);
+
+          // Refresh usage and save message ONLY on success
+          const usagePromise = loadUsage(session.conversation.id)
+            .then(onUsageChange)
+            .catch((err) =>
+              console.error(
+                "[ChatWorkspace] failed to refresh usage on finish",
+                err,
+              ),
+            );
+          await Promise.all([usagePromise, handleFinish(message)]);
+        } else {
+          // On failure, just refresh usage to see current state (nothing was incremented server-side)
+          loadUsage(session.conversation.id)
+            .then(onUsageChange)
+            .catch((err) =>
+              console.error(
+                "[ChatWorkspace] failed to refresh usage on error",
+                err,
+              ),
+            );
+        }
+      },
+    });
 
   const fetchSuggestions = useCallback(
-    async (assistantMessage: ToolAwareMessage, previousMessage?: ToolAwareMessage) => {
+    async (
+      assistantMessage: ToolAwareMessage,
+      previousMessage?: ToolAwareMessage,
+    ) => {
       if (SUGGESTIONS_DISABLED) {
         return;
       }
@@ -733,12 +935,19 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         return;
       }
 
-      const hasDocument = extractDocumentsFromMessage(assistantMessage).length > 0;
+      const hasDocument =
+        extractDocumentsFromMessage(assistantMessage).length > 0;
       if (!hasDocument) {
         const inline = extractInlineSuggestions(assistantMessage);
         if (inline.length > 0) {
-          console.log("✅ [Suggestions] Using inline suggestions from AI tool call:", inline.map(s => s.text));
-          setSuggestionsByMessage((prev) => ({ ...prev, [assistantMessage.id]: inline }));
+          console.log(
+            "✅ [Suggestions] Using inline suggestions from AI tool call:",
+            inline.map((s) => s.text),
+          );
+          setSuggestionsByMessage((prev) => ({
+            ...prev,
+            [assistantMessage.id]: inline,
+          }));
           return;
         }
       }
@@ -755,21 +964,27 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       const body = {
         conversationId: session.conversation.id,
         messageId: assistantMessage.id,
-        lastUserText: lastUserMessage ? getTextContent(lastUserMessage) : undefined,
+        lastUserText: lastUserMessage
+          ? getTextContent(lastUserMessage)
+          : undefined,
         assistantText,
         modelId,
       };
 
       try {
         // Log fallback trigger with diagnostic info
-        const toolNames = assistantMessage.toolInvocations?.map(t => t.toolName) ?? [];
+        const toolNames =
+          assistantMessage.toolInvocations?.map((t) => t.toolName) ?? [];
         const hasFollowupTool = toolNames.includes(FOLLOWUP_TOOL_NAME);
         console.log(
           "⚠️ [Suggestions] Fallback triggered:",
-          hasDocument ? "Document generated (skipping inline)" :
-            !assistantMessage.toolInvocations?.length ? "No tool invocations in response" :
-              !hasFollowupTool ? `AI used tools [${toolNames.join(", ")}] but not ${FOLLOWUP_TOOL_NAME}` :
-                `${FOLLOWUP_TOOL_NAME} tool called but returned no suggestions`
+          hasDocument
+            ? "Document generated (skipping inline)"
+            : !assistantMessage.toolInvocations?.length
+              ? "No tool invocations in response"
+              : !hasFollowupTool
+                ? `AI used tools [${toolNames.join(", ")}] but not ${FOLLOWUP_TOOL_NAME}`
+                : `${FOLLOWUP_TOOL_NAME} tool called but returned no suggestions`,
         );
 
         const res = await fetch("/api/chat/suggestions", {
@@ -784,14 +999,16 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         if (!data.suggestions || data.suggestions.length === 0) {
           return;
         }
-        setSuggestionsByMessage((prev) => ({ ...prev, [assistantMessage.id]: data.suggestions! }));
+        setSuggestionsByMessage((prev) => ({
+          ...prev,
+          [assistantMessage.id]: data.suggestions!,
+        }));
       } catch (err) {
         console.warn("[ChatWorkspace] suggestion fetch failed", err);
       }
     },
-    [modelId, session.conversation.id]
+    [modelId, session.conversation.id],
   );
-
 
   useEffect(() => {
     messagesRef.current = messages as ToolAwareMessage[];
@@ -815,7 +1032,12 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     const refresh = () => {
       void loadUsage(session.conversation.id)
         .then(onUsageChange)
-        .catch((err) => console.error("[ChatWorkspace] failed to refresh usage after reset", err));
+        .catch((err) =>
+          console.error(
+            "[ChatWorkspace] failed to refresh usage after reset",
+            err,
+          ),
+        );
     };
     const delay = nextDeadline - Date.now();
     if (delay <= 0) {
@@ -824,7 +1046,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     }
     const timerId = window.setTimeout(refresh, delay + 1000);
     return () => window.clearTimeout(timerId);
-  }, [session.usage.daily.remaining, session.usage.daily.resetAt, session.usage.chat.remaining, session.usage.chat.resetAt, loadUsage, onUsageChange, session.conversation.id]);
+  }, [
+    session.usage.daily.remaining,
+    session.usage.daily.resetAt,
+    session.usage.chat.remaining,
+    session.usage.chat.resetAt,
+    loadUsage,
+    onUsageChange,
+    session.conversation.id,
+  ]);
 
   const isLoading = status === "streaming" || status === "submitted";
   const isError = status === "error";
@@ -846,7 +1076,10 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   const toolAwareMessages = messages as ToolAwareMessage[];
 
   // Ensure document summaries are present in the message list for display
-  const displayMessages = useMemo(() => toolAwareMessages.map(ensureDocumentSummaryInMessage), [toolAwareMessages]);
+  const displayMessages = useMemo(
+    () => toolAwareMessages.map(ensureDocumentSummaryInMessage),
+    [toolAwareMessages],
+  );
 
   // Extract all documents from the message history for the canvas
   const canvasDocuments = useMemo<CanvasDocument[]>(() => {
@@ -862,42 +1095,57 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     return Array.from(docs.values());
   }, [toolAwareMessages]);
 
-  const documentLookup = useMemo<Partial<Record<string, CanvasDocument>>>(() => {
-    return canvasDocuments.reduce<Partial<Record<string, CanvasDocument>>>((acc, doc) => {
-      if (doc.toolCallId) {
-        acc[doc.toolCallId] = doc;
-      }
-      acc[doc.id] = doc;
-      return acc;
-    }, {});
+  const documentLookup = useMemo<
+    Partial<Record<string, CanvasDocument>>
+  >(() => {
+    return canvasDocuments.reduce<Partial<Record<string, CanvasDocument>>>(
+      (acc, doc) => {
+        if (doc.toolCallId) {
+          acc[doc.toolCallId] = doc;
+        }
+        acc[doc.id] = doc;
+        return acc;
+      },
+      {},
+    );
   }, [canvasDocuments]);
 
   const STORAGE_KEY = `sn-chat-canvas-${session.conversation.id}`;
 
   // Initialize from storage
   const [isCanvasOpen, setIsCanvasOpen] = useState(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === "undefined") return false;
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       return stored ? JSON.parse(stored).isOpen : false;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   });
 
-  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored).activeDocumentId : null;
-    } catch { return null; }
-  });
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(
+    () => {
+      if (typeof window === "undefined") return null;
+      try {
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        return stored ? JSON.parse(stored).activeDocumentId : null;
+      } catch {
+        return null;
+      }
+    },
+  );
 
   // Save to storage
+  // biome-ignore lint/correctness/useExhaustiveDependencies: storage key and conversation id are enough
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      isOpen: isCanvasOpen,
-      activeDocumentId
-    }));
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        isOpen: isCanvasOpen,
+        activeDocumentId,
+      }),
+    );
   }, [isCanvasOpen, activeDocumentId, session.conversation.id, STORAGE_KEY]);
 
   const documentCountRef = useRef(0);
@@ -960,8 +1208,6 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     setSelectedJob(null);
   }, []);
 
-
-
   const workspaceStyle = useMemo<CSSProperties | undefined>(() => {
     if (isCanvasOpen) {
       return { paddingRight: "min(640px, 50vw)" };
@@ -969,20 +1215,25 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
     return undefined;
   }, [isCanvasOpen]);
 
-
-
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: safe to ignore for this large callback
   const submitMessage = useCallback(
     async (textOverride?: string, extraParts: UIPart[] = []) => {
       if (retryAvailable) {
         const newMessages = [...messages];
-        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === "assistant") {
+        if (
+          newMessages.length > 0 &&
+          newMessages[newMessages.length - 1].role === "assistant"
+        ) {
           newMessages.pop();
         }
-        if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === "user") {
+        if (
+          newMessages.length > 0 &&
+          newMessages[newMessages.length - 1].role === "user"
+        ) {
           newMessages.pop();
         }
         setMessages(newMessages);
@@ -993,7 +1244,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       const rawText = textOverride ?? input;
       const trimmed = rawText.trim();
       const hasText = trimmed.length > 0;
-      const currentAttachments = readyAttachments.map(({ id, name, size, type, url }) => ({ id, name, size, type, url }));
+      const currentAttachments = readyAttachments.map(
+        ({ id, name, size, type, url }) => ({ id, name, size, type, url }),
+      );
 
       if (hasUploadingAttachments) {
         const message = "Please wait for uploads to finish before sending.";
@@ -1031,7 +1284,10 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         if (hasText) {
           parts.push({ type: "text", text: trimmed } as UIPart);
         } else {
-          parts.push({ type: "text", text: "Tell me more about this role." } as UIPart);
+          parts.push({
+            type: "text",
+            text: "Tell me more about this role.",
+          } as UIPart);
         }
       } else if (hasText) {
         parts.push({ type: "text", text: trimmed } as UIPart);
@@ -1039,17 +1295,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
       for (const attachment of currentAttachments) {
         if (!attachment.url) continue;
-        parts.push(
-          {
-            type: "file",
-            url: attachment.url,
-            name: attachment.name,
-            mimeType: attachment.type,
-            mediaType: attachment.type,
-            size: attachment.size,
-            attachmentId: attachment.id,
-          } as UIPart
-        );
+        parts.push({
+          type: "file",
+          url: attachment.url,
+          name: attachment.name,
+          mimeType: attachment.type,
+          mediaType: attachment.type,
+          size: attachment.size,
+          attachmentId: attachment.id,
+        } as UIPart);
       }
 
       const pendingRequest: PendingRequest = {
@@ -1073,7 +1327,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       setRetryAvailable(false);
 
       try {
-        await sendMessage(pendingRequest.message, { body: pendingRequest.body });
+        await sendMessage(pendingRequest.message, {
+          body: pendingRequest.body,
+        });
         // Don't clear lastRequestRef here - onFinish will handle it on success
         // This prevents race condition where streaming errors happen after resolve
         setInput("");
@@ -1081,7 +1337,10 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       } catch (sendError) {
         // onError callback handles setting retryAvailable
         // Just log and re-throw for synchronous errors
-        console.warn("🔴 Send failed:", sendError instanceof Error ? sendError.message : "Unknown error");
+        console.warn(
+          "🔴 Send failed:",
+          sendError instanceof Error ? sendError.message : "Unknown error",
+        );
         throw sendError;
       }
     },
@@ -1101,7 +1360,7 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       setSelectedJob,
       setComposerError,
       mode,
-    ]
+    ],
   );
 
   const handleSubmit = useCallback(
@@ -1109,12 +1368,15 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       e?.preventDefault();
       void submitMessage();
     },
-    [submitMessage]
+    [submitMessage],
   );
 
   // Replays the last failed request without forcing the user to retype it.
   const handleRetry = useCallback(async () => {
-    console.log("🔄 Retry button clicked. lastRequestRef:", lastRequestRef.current);
+    console.log(
+      "🔄 Retry button clicked. lastRequestRef:",
+      lastRequestRef.current,
+    );
 
     if (!lastRequestRef.current) {
       console.warn("⚠️ No pending request to retry - lastRequestRef is null");
@@ -1132,12 +1394,17 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
       // Don't clear lastRequestRef here - onFinish will handle it
       // If the retry fails, onFinish will detect empty content and re-enable retry
-      await sendMessage(lastRequestRef.current.message, { body: lastRequestRef.current.body });
+      await sendMessage(lastRequestRef.current.message, {
+        body: lastRequestRef.current.body,
+      });
       // Success is handled by onFinish which clears lastRequestRef
     } catch (retryError) {
       // This catches synchronous errors only (network errors, etc.)
       // Streaming errors are handled by onFinish
-      console.warn("🔴 Retry failed:", retryError instanceof Error ? retryError.message : "Unknown error");
+      console.warn(
+        "🔴 Retry failed:",
+        retryError instanceof Error ? retryError.message : "Unknown error",
+      );
       setRetryAvailable(true);
       if (retryError instanceof Error) {
         setComposerError(retryError.message);
@@ -1160,7 +1427,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
       }
 
       if (attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
-        setComposerError(`You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`);
+        setComposerError(
+          `You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`,
+        );
         logAttachmentFailure({
           message: "Attachment limit reached",
           source: "client_validation",
@@ -1241,19 +1510,26 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
               // Update the preview to show success
               // We use isLocalOnly=true so it displays "Stored locally (resume)" and Check icon
-              setAttachments((prev) => prev.map(a =>
-                a.id === rId
-                  ? { ...a, status: "ready" as const, isLocalOnly: true }
-                  : a
-              ));
-
+              setAttachments((prev) =>
+                prev.map((a) =>
+                  a.id === rId
+                    ? { ...a, status: "ready" as const, isLocalOnly: true }
+                    : a,
+                ),
+              );
             } catch (err) {
               console.error("Auto-resume upload failed:", err);
-              setAttachments((prev) => prev.map(a =>
-                a.id === rId
-                  ? { ...a, status: "error", error: "Resume extraction failed" }
-                  : a
-              ));
+              setAttachments((prev) =>
+                prev.map((a) =>
+                  a.id === rId
+                    ? {
+                        ...a,
+                        status: "error",
+                        error: "Resume extraction failed",
+                      }
+                    : a,
+                ),
+              );
             }
           })();
 
@@ -1289,78 +1565,99 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
 
       setComposerError(errorMessage);
     },
-    [attachments.length, uploadsDisabledMessage, session.conversation.id, uploadAttachment]
+    [
+      attachments.length,
+      uploadsDisabledMessage,
+      session.conversation.id,
+      uploadAttachment,
+    ],
   );
 
   const handleRemoveAttachment = useCallback((attachmentId: string) => {
     attachmentFilesRef.current.delete(attachmentId);
-    setAttachments((prev) => prev.filter((attachment) => attachment.id !== attachmentId));
+    setAttachments((prev) =>
+      prev.filter((attachment) => attachment.id !== attachmentId),
+    );
   }, []);
 
   const handleRetryAttachment = useCallback(
     (attachmentId: string) => {
       const file = attachmentFilesRef.current.get(attachmentId);
       if (!file) {
-        setComposerError("Original file is no longer available. Please reattach it.");
+        setComposerError(
+          "Original file is no longer available. Please reattach it.",
+        );
         return;
       }
       setAttachments((prev) =>
         prev.map((attachment) =>
           attachment.id === attachmentId
             ? { ...attachment, status: "uploading", error: undefined }
-            : attachment
-        )
+            : attachment,
+        ),
       );
       void uploadAttachment(file, attachmentId);
     },
-    [uploadAttachment]
+    [uploadAttachment],
   );
-
-
 
   const isNewConversation = session.conversation.messageCount === 0;
   const dailyLimitReached = session.usage.daily.remaining <= 0;
   const chatLimitReached = session.usage.chat.remaining <= 0;
 
   // Only block if it's a new conversation AND daily limit is reached, OR if chat limit is reached for this specific chat
-  const isLimitReached = (isNewConversation && dailyLimitReached) || chatLimitReached;
-  const chatDisabled =
-    isLimitReached || isLoading;
+  const isLimitReached =
+    (isNewConversation && dailyLimitReached) || chatLimitReached;
+  const chatDisabled = isLimitReached || isLoading;
 
-  const handleSuggestionClick = useCallback(async (text: string) => {
-    if (chatDisabled) return;
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: safe to ignore for suggestion handler
+  const handleSuggestionClick = useCallback(
+    async (text: string) => {
+      if (chatDisabled) return;
+      const trimmed = text.trim();
+      if (!trimmed) return;
 
-    const pendingRequest: PendingRequest = {
-      message: {
-        role: "user",
-        parts: [{ type: "text", text: trimmed } as UIPart],
-      } as ToolAwareMessage,
-      body: {
-        conversationId: session.conversation.id,
-        modelId,
-        mode,
-        isSearchEnabled,
-        attachments: [],
-        isNewConversation: !hasStartedRef.current,
-      },
-    };
+      const pendingRequest: PendingRequest = {
+        message: {
+          role: "user",
+          parts: [{ type: "text", text: trimmed } as UIPart],
+        } as ToolAwareMessage,
+        body: {
+          conversationId: session.conversation.id,
+          modelId,
+          mode,
+          isSearchEnabled,
+          attachments: [],
+          isNewConversation: !hasStartedRef.current,
+        },
+      };
 
-    lastRequestRef.current = pendingRequest;
-    setRetryAvailable(false);
+      lastRequestRef.current = pendingRequest;
+      setRetryAvailable(false);
 
-    try {
-      await sendMessage(pendingRequest.message, { body: pendingRequest.body });
-      lastRequestRef.current = null;
-    } catch (sendError) {
-      setRetryAvailable(true);
-      if (sendError instanceof Error) {
-        setComposerError(sendError.message);
+      try {
+        await sendMessage(pendingRequest.message, {
+          body: pendingRequest.body,
+        });
+        lastRequestRef.current = null;
+      } catch (sendError) {
+        setRetryAvailable(true);
+        if (sendError instanceof Error) {
+          setComposerError(sendError.message);
+        }
       }
-    }
-  }, [chatDisabled, session.conversation.id, modelId, isSearchEnabled, sendMessage, mode]);
+    },
+    [
+      chatDisabled,
+      session.conversation.id,
+      modelId,
+      isSearchEnabled,
+      sendMessage,
+      mode,
+    ],
+  );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll should happen on message/loading change
   useEffect(() => {
     const node = scrollContainerRef.current;
     if (!node) {
@@ -1371,8 +1668,14 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
   }, [displayMessages, isLoading]);
 
   return (
-    <section className="flex flex-1 flex-col h-full relative" style={workspaceStyle}>
-      <div className="flex-1 overflow-y-auto chat-area-bg" ref={scrollContainerRef}>
+    <section
+      className="flex flex-1 flex-col h-full relative"
+      style={workspaceStyle}
+    >
+      <div
+        className="flex-1 overflow-y-auto chat-area-bg"
+        ref={scrollContainerRef}
+      >
         <MessageList
           messages={displayMessages}
           isStreaming={isLoading}
@@ -1380,7 +1683,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           documentLookup={documentLookup}
           showRetry={retryAvailable}
           onRetry={handleRetry}
-          suggestionsByMessage={SUGGESTIONS_DISABLED ? {} : suggestionsByMessage}
+          suggestionsByMessage={
+            SUGGESTIONS_DISABLED ? {} : suggestionsByMessage
+          }
           onSuggestionSelect={(messageId) =>
             setSuggestionsByMessage((prev) => {
               const next = { ...prev };
@@ -1388,7 +1693,9 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
               return next;
             })
           }
-          onSuggestionClick={SUGGESTIONS_DISABLED ? undefined : handleSuggestionClick}
+          onSuggestionClick={
+            SUGGESTIONS_DISABLED ? undefined : handleSuggestionClick
+          }
           onStarterClick={handleSuggestionClick}
           isLimitReached={chatDisabled}
           onSelectJob={handleSelectJob}
@@ -1412,8 +1719,11 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
           isSearchEnabled={isSearchEnabled}
           onNewChat={onNewChat}
           limitReachedReason={
-            isNewConversation && dailyLimitReached ? 'daily' :
-              chatLimitReached ? 'chat' : null
+            isNewConversation && dailyLimitReached
+              ? "daily"
+              : chatLimitReached
+                ? "chat"
+                : null
           }
           selectedJob={selectedJob}
           onRemoveJob={handleRemoveJob}
@@ -1430,7 +1740,6 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
         isOpen={isCanvasOpen}
         onClose={() => setIsCanvasOpen(false)}
       />
-
     </section>
   );
 }
@@ -1441,7 +1750,10 @@ function ChatWorkspace({ session, onUsageChange, onConversationUpdate, onTitleSt
  * @param options.modelId The ID of the model to use
  * @param options.persist Whether to save the conversation to storage immediately (default: true)
  */
-async function createEmptyConversation({ modelId, persist = true }: { modelId: string; persist?: boolean }) {
+async function createEmptyConversation({
+  modelId,
+  persist = true,
+}: { modelId: string; persist?: boolean }) {
   const now = new Date().toISOString();
   const conversation: StoredConversation = {
     id: nanoid(10),
@@ -1467,8 +1779,6 @@ function deriveTitle(content: string) {
   return `${trimmed.slice(0, 47)}…`;
 }
 
-
-
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
 
 /**
@@ -1477,7 +1787,9 @@ const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
  */
 function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
   const hasExplicitParts = Boolean(message.parts?.length);
-  let parts: UIPart[] = hasExplicitParts ? cloneParts(message.parts as UIPart[]) : [];
+  let parts: UIPart[] = hasExplicitParts
+    ? cloneParts(message.parts as UIPart[])
+    : [];
 
   if (!hasExplicitParts) {
     if (message.content) {
@@ -1489,14 +1801,12 @@ function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
 
   if (!hasExplicitParts && message.documents?.length) {
     for (const document of message.documents) {
-      parts.push(
-        {
-          type: DOCUMENT_PART_TYPE,
-          toolCallId: document.toolCallId ?? document.id,
-          state: "output-available",
-          output: cloneDocument(document),
-        } as UIPart
-      );
+      parts.push({
+        type: DOCUMENT_PART_TYPE,
+        toolCallId: document.toolCallId ?? document.id,
+        state: "output-available",
+        output: cloneDocument(document),
+      } as UIPart);
     }
   }
 
@@ -1522,12 +1832,18 @@ function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
   } as UIMessage;
 }
 
-const SUPPORTED_ROLES = new Set<UIMessage["role"]>(["user", "assistant", "system"]);
+const SUPPORTED_ROLES = new Set<UIMessage["role"]>([
+  "user",
+  "assistant",
+  "system",
+]);
 
 /**
  * Checks if a message role is supported by the UI.
  */
-function isSupportedRole(role: UIMessage["role"]): role is "user" | "assistant" | "system" {
+function isSupportedRole(
+  role: UIMessage["role"],
+): role is "user" | "assistant" | "system" {
   return SUPPORTED_ROLES.has(role);
 }
 
@@ -1579,7 +1895,9 @@ type ToolInvocationPart = UIPart & {
  * Extracts a canvas document from a message part if it exists.
  * Validates that the part is a document tool output.
  */
-function extractDocumentFromPart(part: UIPart | undefined): CanvasDocument | null {
+function extractDocumentFromPart(
+  part: UIPart | undefined,
+): CanvasDocument | null {
   if (!part || part.type !== DOCUMENT_PART_TYPE) {
     return null;
   }
@@ -1617,7 +1935,7 @@ function extractInlineSuggestions(message: ToolAwareMessage): ChatSuggestion[] {
 
   // Find all followup tool calls (for debugging)
   const followupInvocations = message.toolInvocations.filter(
-    (invocation) => invocation.toolName === FOLLOWUP_TOOL_NAME
+    (invocation) => invocation.toolName === FOLLOWUP_TOOL_NAME,
   );
 
   if (followupInvocations.length === 0) {
@@ -1626,18 +1944,23 @@ function extractInlineSuggestions(message: ToolAwareMessage): ChatSuggestion[] {
   }
 
   const record = followupInvocations.find(
-    (invocation) => invocation.state === "result" && Boolean(invocation.result)
+    (invocation) => invocation.state === "result" && Boolean(invocation.result),
   );
 
   if (!record) {
     // Tool was called but hasn't completed or failed
-    const states = followupInvocations.map(i => i.state);
-    console.warn(`⚠️ [Suggestions] generateFollowups tool called but not completed. States: [${states.join(", ")}]`);
+    const states = followupInvocations.map((i) => i.state);
+    console.warn(
+      `⚠️ [Suggestions] generateFollowups tool called but not completed. States: [${states.join(", ")}]`,
+    );
     return [];
   }
 
   if (!record.result || typeof record.result !== "object") {
-    console.warn("⚠️ [Suggestions] generateFollowups returned invalid result:", record.result);
+    console.warn(
+      "⚠️ [Suggestions] generateFollowups returned invalid result:",
+      record.result,
+    );
     return [];
   }
 
@@ -1645,7 +1968,9 @@ function extractInlineSuggestions(message: ToolAwareMessage): ChatSuggestion[] {
   const values = Array.isArray(payload.suggestions) ? payload.suggestions : [];
 
   if (values.length === 0) {
-    console.warn("⚠️ [Suggestions] generateFollowups returned empty suggestions array");
+    console.warn(
+      "⚠️ [Suggestions] generateFollowups returned empty suggestions array",
+    );
   }
 
   return values
@@ -1693,7 +2018,13 @@ function buildStoredMessageSnapshot(message: StoredMessage): string {
   });
 }
 
-function buildPersistenceSnapshot({ content, documents, toolInvocations, parts, attachments }: SnapshotInput): string {
+function buildPersistenceSnapshot({
+  content,
+  documents,
+  toolInvocations,
+  parts,
+  attachments,
+}: SnapshotInput): string {
   return JSON.stringify({
     content,
     documents,
@@ -1720,7 +2051,9 @@ type FileUIPart = UIPart & {
   attachmentId?: string;
 };
 
-function extractAttachmentsFromMessageParts(message: UIMessage): StoredAttachment[] {
+function extractAttachmentsFromMessageParts(
+  message: UIMessage,
+): StoredAttachment[] {
   if (!message.parts?.length) {
     return [];
   }
@@ -1735,7 +2068,11 @@ function extractAttachmentsFromMessageParts(message: UIMessage): StoredAttachmen
   return attachments;
 }
 
-function convertPartToStoredAttachment(part: UIPart, index: number, messageId: string): StoredAttachment | null {
+function convertPartToStoredAttachment(
+  part: UIPart,
+  index: number,
+  messageId: string,
+): StoredAttachment | null {
   if (part.type !== "file") {
     return null;
   }
@@ -1743,9 +2080,11 @@ function convertPartToStoredAttachment(part: UIPart, index: number, messageId: s
   if (typeof filePart.url !== "string") {
     return null;
   }
-  const fallbackId = filePart.attachmentId ?? `${messageId}-attachment-${index}`;
-  const attachmentName = filePart.name && filePart.name.length ? filePart.name : "Attachment";
-  const attachmentType = filePart.mimeType ?? filePart.mediaType ?? "application/octet-stream";
+  const fallbackId =
+    filePart.attachmentId ?? `${messageId}-attachment-${index}`;
+  const attachmentName = filePart.name?.length ? filePart.name : "Attachment";
+  const attachmentType =
+    filePart.mimeType ?? filePart.mediaType ?? "application/octet-stream";
   const attachmentSize = typeof filePart.size === "number" ? filePart.size : 0;
   return {
     id: fallbackId,
@@ -1756,7 +2095,10 @@ function convertPartToStoredAttachment(part: UIPart, index: number, messageId: s
   };
 }
 
-function hydrateAttachmentsIntoParts(parts: UIPart[], attachments?: StoredAttachment[]): UIPart[] {
+function hydrateAttachmentsIntoParts(
+  parts: UIPart[],
+  attachments?: StoredAttachment[],
+): UIPart[] {
   if (!attachments?.length) {
     return parts;
   }
@@ -1764,7 +2106,7 @@ function hydrateAttachmentsIntoParts(parts: UIPart[], attachments?: StoredAttach
     parts
       .filter((part): part is FileUIPart => part.type === "file")
       .map((part) => part.url)
-      .filter((url): url is string => Boolean(url))
+      .filter((url): url is string => Boolean(url)),
   );
   const nextParts = [...parts];
   for (const attachment of attachments) {
@@ -1790,17 +2132,25 @@ function hydrateAttachmentsIntoParts(parts: UIPart[], attachments?: StoredAttach
  */
 function ensureDocumentSummaryInMessage<T extends UIMessage>(message: T): T {
   const parts = message.parts ?? [];
-  const document = parts.reduce<CanvasDocument | null>((acc, part) => acc ?? extractDocumentFromPart(part), null);
+  const document = parts.reduce<CanvasDocument | null>(
+    (acc, part) => acc ?? extractDocumentFromPart(part),
+    null,
+  );
   if (!document) {
     return message;
   }
   const summary = buildDocumentSummary(document);
   const filteredParts = parts.filter((part) => !TEXT_PART_TYPES.has(part.type));
-  const nextParts = [...filteredParts, { type: "text", text: summary } as UIPart];
+  const nextParts = [
+    ...filteredParts,
+    { type: "text", text: summary } as UIPart,
+  ];
   return { ...message, parts: nextParts } as T;
 }
 
-function findLastUserMessage(messages: ToolAwareMessage[]): ToolAwareMessage | null {
+function findLastUserMessage(
+  messages: ToolAwareMessage[],
+): ToolAwareMessage | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const candidate = messages[i];
     if (candidate?.role === "user") {
@@ -1827,4 +2177,3 @@ function buildDocumentSummary(document: CanvasDocument): string {
   }
   return `Here is your generated ${readableType}.`;
 }
-

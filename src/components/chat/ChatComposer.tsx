@@ -1,6 +1,6 @@
 /**
  * Chat Composer Component
- * 
+ *
  * The primary input interface for the chat system.
  * Features:
  * - Text area with auto-resize and character count
@@ -9,19 +9,33 @@
  * - Model picker integration
  * - Resume context toggle integration
  * - Rate limit warning overlays
- * 
+ *
  * @module components/chat/ChatComposer
  */
 
 "use client";
 
-import { useRef, useState, type ChangeEventHandler, type FormEventHandler, type KeyboardEvent } from "react";
-import { ArrowUp, X, ChevronDown, Loader2, Check, Lock, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
+import {
+  AlertTriangle,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Loader2,
+  Lock,
+  X,
+} from "lucide-react";
+import {
+  type ChangeEventHandler,
+  type FormEventHandler,
+  type KeyboardEvent,
+  useRef,
+  useState,
+} from "react";
 
+import { CHAT_MODELS } from "@/lib/chat/constants";
 import type { AttachmentPreview } from "@/lib/chat/types";
 import type { UsageSnapshot } from "@/lib/chat/types";
-import { CHAT_MODELS } from "@/lib/chat/constants";
 import type { Job } from "@/lib/jobs/types";
 import { formatDurationShort } from "@/lib/time";
 import { ResumeToggle } from "./ResumeToggle";
@@ -43,7 +57,7 @@ type ChatComposerProps = {
   modelId?: string;
   onModelChange?: (modelId: string) => void;
   isSearchEnabled?: boolean;
-  limitReachedReason?: 'daily' | 'chat' | null;
+  limitReachedReason?: "daily" | "chat" | null;
   onNewChat?: () => void;
   selectedJob?: Job | null;
   onRemoveJob?: () => void;
@@ -89,8 +103,11 @@ export function ChatComposer({
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   // Only show actual errors in the error area, not attachments disabled message (that shows as tooltip)
   const primaryError = error;
-  const activeLimitWindow = limitReachedReason && usage ? usage[limitReachedReason] : null;
-  const activeResetCountdown = activeLimitWindow ? formatDurationShort(activeLimitWindow.secondsUntilReset) : null;
+  const activeLimitWindow =
+    limitReachedReason && usage ? usage[limitReachedReason] : null;
+  const activeResetCountdown = activeLimitWindow
+    ? formatDurationShort(activeLimitWindow.secondsUntilReset)
+    : null;
 
   // Handle Enter key to submit, Shift+Enter for new line
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -103,11 +120,13 @@ export function ChatComposer({
     }
   };
 
-  const currentModel = CHAT_MODELS.find((m) => m.id === modelId) || CHAT_MODELS[0];
+  const currentModel =
+    CHAT_MODELS.find((m) => m.id === modelId) || CHAT_MODELS[0];
   const showCharCount = input.length > MAX_INPUT_LENGTH * 0.8;
 
   const hasTypedInput = Boolean(input.trim());
-  const hasPayload = hasTypedInput || attachments.length > 0 || Boolean(selectedJob);
+  const hasPayload =
+    hasTypedInput || attachments.length > 0 || Boolean(selectedJob);
   const sendDisabled =
     disabled ||
     isStreaming ||
@@ -131,10 +150,8 @@ export function ChatComposer({
         onSubmit={onSubmit}
         className={clsx(
           "relative flex flex-col rounded-2xl border bg-white transition-all",
-          isNavigatorMode
-            ? "border-violet-200"
-            : "border-slate-200",
-          disabled && "bg-slate-50"
+          isNavigatorMode ? "border-violet-200" : "border-slate-200",
+          disabled && "bg-slate-50",
         )}
         style={{ boxShadow: glowShadow }}
       >
@@ -144,7 +161,7 @@ export function ChatComposer({
             <div className="flex flex-col items-center gap-3 max-w-sm">
               <div className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600 shadow-sm border border-slate-200">
                 <Lock className="h-4 w-4 text-amber-500" />
-                {limitReachedReason === 'daily'
+                {limitReachedReason === "daily"
                   ? "Daily conversation limit reached. Come back tomorrow!"
                   : "Message limit reached for this conversation."}
               </div>
@@ -155,8 +172,10 @@ export function ChatComposer({
                 </p>
               )}
 
-              {limitReachedReason === 'chat' && onNewChat && usage && (
-                usage.daily.remaining > 0 ? (
+              {limitReachedReason === "chat" &&
+                onNewChat &&
+                usage &&
+                (usage.daily.remaining > 0 ? (
                   <button
                     type="button"
                     onClick={onNewChat}
@@ -168,8 +187,7 @@ export function ChatComposer({
                   <span className="text-xs text-slate-500">
                     You have also reached your daily chat limit.
                   </span>
-                )
-              )}
+                ))}
             </div>
           </div>
         )}
@@ -184,10 +202,15 @@ export function ChatComposer({
                 "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-all rounded-md tracking-tight",
                 mode === "jay"
                   ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50",
               )}
             >
-              <div className={clsx("h-1.5 w-1.5 rounded-full", mode === "jay" ? "bg-blue-500" : "bg-slate-400")} />
+              <div
+                className={clsx(
+                  "h-1.5 w-1.5 rounded-full",
+                  mode === "jay" ? "bg-blue-500" : "bg-slate-400",
+                )}
+              />
               <span>Jay</span>
             </button>
             <button
@@ -197,10 +220,15 @@ export function ChatComposer({
                 "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-all rounded-md tracking-tight",
                 mode === "navigator"
                   ? "bg-white text-violet-600 shadow-sm ring-1 ring-black/5"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50",
               )}
             >
-              <div className={clsx("h-1.5 w-1.5 rounded-full", mode === "navigator" ? "bg-violet-500" : "bg-slate-400")} />
+              <div
+                className={clsx(
+                  "h-1.5 w-1.5 rounded-full",
+                  mode === "navigator" ? "bg-violet-500" : "bg-slate-400",
+                )}
+              />
               <span>Navigator</span>
             </button>
           </div>
@@ -208,10 +236,17 @@ export function ChatComposer({
 
         {/* Attachments Preview */}
         {(attachments.length > 0 || selectedJob) && (
-          <div className={clsx("flex flex-wrap gap-2 px-3 pb-0", onModeChange ? "pt-12" : "pt-3")}>
+          <div
+            className={clsx(
+              "flex flex-wrap gap-2 px-3 pb-0",
+              onModeChange ? "pt-12" : "pt-3",
+            )}
+          >
             {selectedJob && (
               <div className="relative flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 pr-8 text-sm text-blue-700">
-                <span className="max-w-[200px] truncate font-medium">Job: {selectedJob.title}</span>
+                <span className="max-w-[200px] truncate font-medium">
+                  Job: {selectedJob.title}
+                </span>
                 <button
                   type="button"
                   onClick={onRemoveJob}
@@ -230,7 +265,7 @@ export function ChatComposer({
                 : isUploading
                   ? "Uploading…"
                   : isError
-                    ? att.error ?? "Upload failed"
+                    ? (att.error ?? "Upload failed")
                     : "Ready";
 
               return (
@@ -242,7 +277,7 @@ export function ChatComposer({
                       ? "border-red-200 bg-red-50 text-red-600"
                       : isUploading
                         ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-slate-200 bg-slate-50 text-slate-700"
+                        : "border-slate-200 bg-slate-50 text-slate-700",
                   )}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -257,7 +292,14 @@ export function ChatComposer({
                     </span>
                     <div className="flex flex-col min-w-0">
                       <span className="truncate font-medium">{att.name}</span>
-                      <span className={clsx("text-[11px] truncate", isError ? "text-red-600" : "text-slate-500")}>{statusText}</span>
+                      <span
+                        className={clsx(
+                          "text-[11px] truncate",
+                          isError ? "text-red-600" : "text-slate-500",
+                        )}
+                      >
+                        {statusText}
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -285,12 +327,22 @@ export function ChatComposer({
         )}
 
         {hasUploadingAttachments && (
-          <div className={clsx("mx-4 text-xs text-slate-500", !attachments.length && !selectedJob && onModeChange && "mt-12")}>
+          <div
+            className={clsx(
+              "mx-4 text-xs text-slate-500",
+              !attachments.length && !selectedJob && onModeChange && "mt-12",
+            )}
+          >
             Uploads in progress—please wait before sending.
           </div>
         )}
         {hasErroredAttachments && (
-          <div className={clsx("mx-4 text-xs text-red-600", !attachments.length && !selectedJob && onModeChange && "mt-12")}>
+          <div
+            className={clsx(
+              "mx-4 text-xs text-red-600",
+              !attachments.length && !selectedJob && onModeChange && "mt-12",
+            )}
+          >
             Fix or remove failed uploads to continue.
           </div>
         )}
@@ -303,17 +355,23 @@ export function ChatComposer({
             placeholder="Type your message here..."
             className={clsx(
               "min-h-[60px] w-full resize-none bg-transparent px-4 pb-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50",
-              onModeChange && !attachments.length && !selectedJob ? "pt-14" : "pt-4"
+              onModeChange && !attachments.length && !selectedJob
+                ? "pt-14"
+                : "pt-4",
             )}
             rows={1}
             disabled={disabled}
             maxLength={MAX_INPUT_LENGTH}
           />
           {showCharCount && (
-            <div className={clsx(
-              "absolute bottom-2 right-4 text-xs pointer-events-none",
-              input.length >= MAX_INPUT_LENGTH ? "text-red-500 font-medium" : "text-slate-400"
-            )}>
+            <div
+              className={clsx(
+                "absolute bottom-2 right-4 text-xs pointer-events-none",
+                input.length >= MAX_INPUT_LENGTH
+                  ? "text-red-500 font-medium"
+                  : "text-slate-400",
+              )}
+            >
               {input.length} / {MAX_INPUT_LENGTH}
             </div>
           )}
@@ -353,18 +411,25 @@ export function ChatComposer({
                           }}
                           className={clsx(
                             "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition",
-                            isActive ? "bg-slate-50 text-slate-900" : "text-slate-600",
-                            isLocked && "cursor-not-allowed opacity-60 hover:bg-transparent"
+                            isActive
+                              ? "bg-slate-50 text-slate-900"
+                              : "text-slate-600",
+                            isLocked &&
+                              "cursor-not-allowed opacity-60 hover:bg-transparent",
                           )}
                         >
                           <div>
                             <div className="font-medium">{model.name}</div>
-                            <div className="text-xs text-slate-400">{model.description}</div>
+                            <div className="text-xs text-slate-400">
+                              {model.description}
+                            </div>
                           </div>
                           {isLocked ? (
                             <Lock className="h-4 w-4 text-slate-400" />
                           ) : (
-                            isActive && <Check className="h-4 w-4 text-[#006dff]" />
+                            isActive && (
+                              <Check className="h-4 w-4 text-[#006dff]" />
+                            )
                           )}
                         </button>
                       );
@@ -403,33 +468,45 @@ export function ChatComposer({
                 "flex h-8 w-8 items-center justify-center rounded-lg transition-all",
                 hasPayload && !sendDisabled
                   ? "text-white hover:opacity-90 shadow-sm"
-                  : "bg-slate-100 text-slate-300 cursor-not-allowed"
+                  : "bg-slate-100 text-slate-300 cursor-not-allowed",
               )}
-              style={hasPayload && !sendDisabled ? { backgroundColor: primaryColor } : undefined}
+              style={
+                hasPayload && !sendDisabled
+                  ? { backgroundColor: primaryColor }
+                  : undefined
+              }
             >
-              {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+              {isStreaming ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
             </button>
           </div>
         </div>
       </form>
 
-      {primaryError && <p className="mt-2 text-center text-xs text-red-500">{primaryError}</p>}
+      {primaryError && (
+        <p className="mt-2 text-center text-xs text-red-500">{primaryError}</p>
+      )}
 
       <div className="mt-2 flex items-center justify-between px-1 text-xs text-slate-400">
-        <span>
-          AI can make mistakes. Please double check responses.
-        </span>
+        <span>AI can make mistakes. Please double check responses.</span>
         {usage && (
-          <span className={clsx(
-            "font-medium",
-            usage.chat.remaining === 0 ? "text-red-500" :
-              usage.chat.remaining < 3 ? "text-amber-500" : "text-slate-400"
-          )}>
+          <span
+            className={clsx(
+              "font-medium",
+              usage.chat.remaining === 0
+                ? "text-red-500"
+                : usage.chat.remaining < 3
+                  ? "text-amber-500"
+                  : "text-slate-400",
+            )}
+          >
             {usage.chat.remaining} messages left
           </span>
         )}
       </div>
-    </div >
+    </div>
   );
 }
-

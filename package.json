@@ -13,9 +13,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "test": "vitest run",
-    "test:e2e": "playwright test"
+    "lint": "biome check --write .",
+    "lint:check": "biome check ."
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.68",
@@ -45,17 +44,14 @@
     "zod": "^3.24.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.2",
+    "@biomejs/biome": "^1.9.4",
     "@tailwindcss/postcss": "^4",
     "@types/file-saver": "^2.0.7",
     "@types/luxon": "^3.7.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.0.1",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "vitest": "^2.1.5"
+    "typescript": "^5"
   }
 }

@@ -1,17 +1,17 @@
 /**
  * Main Chat API Route
- * 
+ *
  * The core streaming endpoint for the SportsNaukri chat system.
  * Handles AI conversations with support for:
  * - Tool calling (job search, document generation, skill mapping)
  * - Resume context injection for personalized responses
  * - Rate limiting (daily conversations, per-chat messages)
  * - Multi-step tool execution with streaming responses
- * 
+ *
  * Modes:
  * - "jay": Career coach mode - friendly, conversational
  * - "navigator": Career exploration - analytical, data-driven
- * 
+ *
  * @module app/api/chat/route
  * @see {@link ../../../lib/rateLimiter.ts} for rate limiting
  * @see {@link ../../../lib/jobs/service.ts} for job search
@@ -23,7 +23,13 @@
 // ============================================================================
 
 import { createOpenAI } from "@ai-sdk/openai";
-import { convertToCoreMessages as convertToModelMessages, streamText, tool, stepCountIs, type UIMessage } from "ai";
+import {
+  type UIMessage,
+  convertToCoreMessages as convertToModelMessages,
+  stepCountIs,
+  streamText,
+  tool,
+} from "ai";
 import { NextResponse } from "next/server";
 import { ZodError, z } from "zod";
 
@@ -31,13 +37,18 @@ import { ZodError, z } from "zod";
 // Internal Imports - Chat Infrastructure
 // ============================================================================
 
-import { CHAT_MODELS, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
 import {
+  type AttachmentPayload,
   AttachmentValidationError,
   ensureValidAttachments,
-  type AttachmentPayload,
 } from "@/lib/chat/attachments";
-import { chatRequestSchema, type ChatRequestPayload } from "@/lib/chat/schemas";
+import { CHAT_MODELS, FOLLOWUP_TOOL_NAME } from "@/lib/chat/constants";
+import { type ChatRequestPayload, chatRequestSchema } from "@/lib/chat/schemas";
+import {
+  ChatErrorCode,
+  type ChatErrorResponse,
+  getErrorMessage,
+} from "@/lib/errors/codes";
 import { getClientIp } from "@/lib/ip";
 import {
   RateLimitError,
@@ -46,7 +57,6 @@ import {
   confirmMessageSent,
   confirmNewConversation,
 } from "@/lib/rateLimiter";
-import { ChatErrorCode, getErrorMessage, type ChatErrorResponse } from "@/lib/errors/codes";
 
 // ============================================================================
 // Internal Imports - Tools & Features
@@ -54,22 +64,26 @@ import { ChatErrorCode, getErrorMessage, type ChatErrorResponse } from "@/lib/er
 
 import {
   DOCUMENT_TOOL_NAME,
+  type DocumentInput,
+  type GeneratedDocument,
   documentInputSchema,
   generatedDocumentSchema,
   isGeneratedDocument,
-  type DocumentInput,
-  type GeneratedDocument,
 } from "@/lib/canvas/documents";
 import { fetchJobs } from "@/lib/jobs/service";
-import { JOB_SEARCH_TOOL_NAME, jobSearchSchema, type JobSearchInput } from "@/lib/jobs/tools";
+import {
+  JOB_SEARCH_TOOL_NAME,
+  type JobSearchInput,
+  jobSearchSchema,
+} from "@/lib/jobs/tools";
 import type { JobResponse } from "@/lib/jobs/types";
 import {
   SKILL_MAPPER_TOOL_NAME,
-  skillMapperInputSchema,
-  skillMapperOutputSchema,
-  mapSkillsToRoles,
   type SkillMapperInput,
   type SkillMapperOutput,
+  mapSkillsToRoles,
+  skillMapperInputSchema,
+  skillMapperOutputSchema,
 } from "@/lib/skills/mapper";
 
 // ============================================================================
@@ -116,17 +130,23 @@ const followupToolInputSchema = z.object({
 // ============================================================================
 
 /** Finds an enabled model by ID from the models configuration */
-const getEnabledModel = (modelId: string) => CHAT_MODELS.find((model) => model.id === modelId && model.isEnabled);
+const getEnabledModel = (modelId: string) =>
+  CHAT_MODELS.find((model) => model.id === modelId && model.isEnabled);
 
 export async function POST(req: Request) {
   try {
-    console.log("\n------------------------------------------------------------");
+    console.log(
+      "\n------------------------------------------------------------",
+    );
     const json = await req.json();
     const payload = chatRequestSchema.parse(json);
 
     const selectedModel = getEnabledModel(payload.modelId);
     if (!selectedModel) {
-      return NextResponse.json({ error: "Model is not available" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Model is not available" },
+        { status: 400 },
+      );
     }
 
     const ip = getClientIp(req.headers);
@@ -139,12 +159,18 @@ export async function POST(req: Request) {
     await checkCanSendMessage(ip, payload.conversationId);
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "OpenAI API key is not configured" }, { status: 500 });
+      return NextResponse.json(
+        { error: "OpenAI API key is not configured" },
+        { status: 500 },
+      );
     }
 
     const sanitizedAttachments = ensureValidAttachments(payload.attachments);
     const sanitizedMessages = sanitizeUiMessages(payload.messages);
-    const uiMessages = attachUploadsToMessages(sanitizedMessages, sanitizedAttachments);
+    const uiMessages = attachUploadsToMessages(
+      sanitizedMessages,
+      sanitizedAttachments,
+    );
 
     // Truncate history to prevent excessive token usage.
     // We keep the last 20 messages (approx 10 turns) which aligns with the chat limit.
@@ -152,20 +178,29 @@ export async function POST(req: Request) {
     const recentUiMessages = uiMessages.slice(-20);
 
     const resumeMeta = extractLatestResumeMeta(recentUiMessages as UIMessage[]);
-    const modelMessages = convertToModelMessages(recentUiMessages as UIMessage[]).filter(isSupportedModelMessage);
+    const modelMessages = convertToModelMessages(
+      recentUiMessages as UIMessage[],
+    ).filter(isSupportedModelMessage);
 
-    console.log(`🤖 Chat API | model: ${payload.modelId} | mode: ${payload.mode} | key: ✓ | conv: ${payload.conversationId}`);
+    console.log(
+      `🤖 Chat API | model: ${payload.modelId} | mode: ${payload.mode} | key: ✓ | conv: ${payload.conversationId}`,
+    );
 
     // Build resume context section if provided (Phase 5: works for BOTH modes)
     let resumeContextSection = "";
     if (payload.resumeContext) {
       const { name, skills, summary, experience } = payload.resumeContext;
-      const expSummary = experience?.slice(0, 3).map(e => `${e.title} at ${e.company}`).join(", ") || "";
+      const expSummary =
+        experience
+          ?.slice(0, 3)
+          .map((e) => `${e.title} at ${e.company}`)
+          .join(", ") || "";
 
       // Different instructions based on mode
-      const modeInstruction = payload.mode === "navigator"
-        ? "Use this profile to provide personalized career recommendations. Prioritize roles and training that match their existing skills."
-        : "Use this profile when creating resumes, cover letters, or career documents. Pre-fill the user's name, skills, experience, and other relevant details from this profile.";
+      const modeInstruction =
+        payload.mode === "navigator"
+          ? "Use this profile to provide personalized career recommendations. Prioritize roles and training that match their existing skills."
+          : "Use this profile when creating resumes, cover letters, or career documents. Pre-fill the user's name, skills, experience, and other relevant details from this profile.";
 
       resumeContextSection = `
 USER PROFILE (from uploaded resume):
@@ -176,12 +211,17 @@ ${expSummary ? `- Recent Experience: ${expSummary}` : ""}
 
 ${modeInstruction}
 `;
-      console.log(`📋 [Resume Context] Injected: ${skills.length} skills, ${experience?.length ?? 0} experiences for ${payload.mode} mode`);
+      console.log(
+        `📋 [Resume Context] Injected: ${skills.length} skills, ${experience?.length ?? 0} experiences for ${payload.mode} mode`,
+      );
     }
 
     // Select system prompt based on mode, inject resume context if available
-    const basePrompt = payload.mode === "navigator" ? navigatorPrompt : jayPrompt;
-    const activePrompt = resumeContextSection ? `${basePrompt}\n\n${resumeContextSection}` : basePrompt;
+    const basePrompt =
+      payload.mode === "navigator" ? navigatorPrompt : jayPrompt;
+    const activePrompt = resumeContextSection
+      ? `${basePrompt}\n\n${resumeContextSection}`
+      : basePrompt;
 
     const result = await streamText({
       model: openAIProvider(selectedModel.providerModelId),
@@ -205,17 +245,22 @@ ${modeInstruction}
           },
         }),
         [JOB_SEARCH_TOOL_NAME]: tool<JobSearchInput, JobResponse>({
-          description: "Search for sports-related jobs, internships, and career opportunities on SportsNaukri.com.",
+          description:
+            "Search for sports-related jobs, internships, and career opportunities on SportsNaukri.com.",
           inputSchema: jobSearchSchema,
           async execute(input) {
-            console.log(`🔍 [Job Search] Query: "${input.search}" | Location: ${input.location || "any"}`);
+            console.log(
+              `🔍 [Job Search] Query: "${input.search}" | Location: ${input.location || "any"}`,
+            );
             const requestId = crypto.randomUUID();
             const resumeSkills = resumeMeta?.topSkills ?? [];
             const resumeGeneralKeywords = resumeMeta?.generalKeywords ?? [];
-            const fallbackGeneralKeywords = resumeGeneralKeywords.length > 0
-              ? resumeGeneralKeywords
-              : deriveKeywordsFromSearch(input.search);
-            const requestedLimit = typeof input.limit === "number" ? input.limit : 10;
+            const fallbackGeneralKeywords =
+              resumeGeneralKeywords.length > 0
+                ? resumeGeneralKeywords
+                : deriveKeywordsFromSearch(input.search);
+            const requestedLimit =
+              typeof input.limit === "number" ? input.limit : 10;
             const normalizedLimit = Math.min(Math.max(requestedLimit, 5), 20);
             const filter = {
               ...input,
@@ -238,11 +283,16 @@ ${modeInstruction}
             results.meta.searchKeywords = results.meta.searchKeywords?.length
               ? results.meta.searchKeywords
               : deriveKeywordsFromSearch(input.search);
-            console.log(`🔍 [Job Search] Found ${results.jobs?.length ?? 0} jobs`);
+            console.log(
+              `🔍 [Job Search] Found ${results.jobs?.length ?? 0} jobs`,
+            );
             return results;
           },
         }),
-        [FOLLOWUP_TOOL_NAME]: tool<{ suggestions: string[] }, { suggestions: string[] }>({
+        [FOLLOWUP_TOOL_NAME]: tool<
+          { suggestions: string[] },
+          { suggestions: string[] }
+        >({
           description:
             "Call this after you finish answering (unless you just generated a document). Provide up to two short, user-facing follow-up prompts.",
           inputSchema: followupToolInputSchema,
@@ -251,7 +301,9 @@ ${modeInstruction}
               .map((value) => value.trim())
               .filter((value) => value.length > 0)
               .slice(0, 2)
-              .map((value) => (value.length > 120 ? `${value.slice(0, 117)}...` : value));
+              .map((value) =>
+                value.length > 120 ? `${value.slice(0, 117)}...` : value,
+              );
             return { suggestions: cleaned };
           },
         }),
@@ -263,42 +315,59 @@ ${modeInstruction}
           async execute(input) {
             console.log(`🎯 [Skill Mapper] Skills: ${input.skills.join(", ")}`);
             const result = mapSkillsToRoles(input);
-            console.log(`🎯 [Skill Mapper] Found ${result.mappings.length} role matches`);
+            console.log(
+              `🎯 [Skill Mapper] Found ${result.mappings.length} role matches`,
+            );
             return result;
           },
         }),
       },
       // Log each step's completion for debugging multi-step tool flows
       onStepFinish: ({ text, toolResults, finishReason }) => {
-        const toolNames = toolResults?.map(r => r.toolName).join(", ") || "";
-        console.log(`📍 Step | ${finishReason} | text: ${text?.length ?? 0} chars | tools: ${toolNames || "none"}`);
+        const toolNames = toolResults?.map((r) => r.toolName).join(", ") || "";
+        console.log(
+          `📍 Step | ${finishReason} | text: ${text?.length ?? 0} chars | tools: ${toolNames || "none"}`,
+        );
       },
       onFinish: async ({ usage, finishReason, text }) => {
-        console.log(`💰 Tokens | ${payload.conversationId.slice(0, 8)} | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"} | reason: ${finishReason}`);
+        console.log(
+          `💰 Tokens | ${payload.conversationId.slice(0, 8)} | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"} | reason: ${finishReason}`,
+        );
 
         // Only increment counters if the response was successful
         // finishReason: "stop" = normal completion, "tool-calls" = tool was called
         // finishReason: "error", "length", "content-filter", "unknown" = don't count
-        const isSuccess = (finishReason === "stop" || finishReason === "tool-calls") && (text?.length ?? 0) > 0;
+        const isSuccess =
+          (finishReason === "stop" || finishReason === "tool-calls") &&
+          (text?.length ?? 0) > 0;
 
         if (!isSuccess) {
-          console.warn(`⚠️ Response not successful (reason: ${finishReason}, text: ${text?.length ?? 0} chars) - NOT counting toward limit`);
+          console.warn(
+            `⚠️ Response not successful (reason: ${finishReason}, text: ${text?.length ?? 0} chars) - NOT counting toward limit`,
+          );
           return;
         }
 
         try {
           if (payload.isNewConversation) {
             confirmNewConversation(ip);
-            console.log(`✅ Confirmed new conversation for IP ${ip.slice(0, 8)}`);
+            console.log(
+              `✅ Confirmed new conversation for IP ${ip.slice(0, 8)}`,
+            );
           }
           confirmMessageSent(ip, payload.conversationId);
-          console.log(`✅ Confirmed message sent in ${payload.conversationId.slice(0, 8)}`);
+          console.log(
+            `✅ Confirmed message sent in ${payload.conversationId.slice(0, 8)}`,
+          );
         } catch (confirmError) {
           console.error("Failed to confirm usage:", confirmError);
         }
       },
       onError: (error) => {
-        console.error(`🔴 Stream error for ${payload.conversationId.slice(0, 8)}:`, error);
+        console.error(
+          `🔴 Stream error for ${payload.conversationId.slice(0, 8)}:`,
+          error,
+        );
         // Don't confirm usage on error - the onFinish will also not confirm
       },
       experimental_telemetry: {
@@ -312,63 +381,114 @@ ${modeInstruction}
     return response;
   } catch (error) {
     if (error instanceof ZodError) {
-      console.error(`🔴 [${ChatErrorCode.INVALID_PAYLOAD}] Invalid chat payload`, error.issues);
+      console.error(
+        `🔴 [${ChatErrorCode.INVALID_PAYLOAD}] Invalid chat payload`,
+        error.issues,
+      );
       return NextResponse.json<ChatErrorResponse>(
-        { error: getErrorMessage(ChatErrorCode.INVALID_PAYLOAD), code: ChatErrorCode.INVALID_PAYLOAD, details: "Zod validation failed" },
-        { status: 400 }
+        {
+          error: getErrorMessage(ChatErrorCode.INVALID_PAYLOAD),
+          code: ChatErrorCode.INVALID_PAYLOAD,
+          details: "Zod validation failed",
+        },
+        { status: 400 },
       );
     }
 
     if (error instanceof AttachmentValidationError) {
-      console.error(`🔴 [${ChatErrorCode.ATTACHMENT_ERROR}] Attachment error:`, error.message);
+      console.error(
+        `🔴 [${ChatErrorCode.ATTACHMENT_ERROR}] Attachment error:`,
+        error.message,
+      );
       return NextResponse.json<ChatErrorResponse>(
-        { error: getErrorMessage(ChatErrorCode.ATTACHMENT_ERROR), code: ChatErrorCode.ATTACHMENT_ERROR, details: error.message },
-        { status: 400 }
+        {
+          error: getErrorMessage(ChatErrorCode.ATTACHMENT_ERROR),
+          code: ChatErrorCode.ATTACHMENT_ERROR,
+          details: error.message,
+        },
+        { status: 400 },
       );
     }
 
     if (error instanceof RateLimitError) {
-      const errorCode = error.code === "CONVERSATION_LIMIT" ? ChatErrorCode.DAILY_LIMIT_REACHED : ChatErrorCode.CHAT_LIMIT_REACHED;
+      const errorCode =
+        error.code === "CONVERSATION_LIMIT"
+          ? ChatErrorCode.DAILY_LIMIT_REACHED
+          : ChatErrorCode.CHAT_LIMIT_REACHED;
       console.warn(`⚠️ [${errorCode}] Rate limit:`, error.message);
       return NextResponse.json<ChatErrorResponse>(
-        { error: getErrorMessage(errorCode), code: errorCode, details: error.message },
-        { status: error.status }
+        {
+          error: getErrorMessage(errorCode),
+          code: errorCode,
+          details: error.message,
+        },
+        { status: error.status },
       );
     }
 
     // Handle OpenAI rate limit errors (429)
     if (error && typeof error === "object" && "statusCode" in error) {
-      const apiError = error as { statusCode?: number; message?: string; responseBody?: string };
+      const apiError = error as {
+        statusCode?: number;
+        message?: string;
+        responseBody?: string;
+      };
       if (apiError.statusCode === 429) {
-        console.warn(`⚠️ [${ChatErrorCode.RATE_LIMIT_EXCEEDED}] OpenAI rate limit:`, apiError.message?.slice(0, 100));
+        console.warn(
+          `⚠️ [${ChatErrorCode.RATE_LIMIT_EXCEEDED}] OpenAI rate limit:`,
+          apiError.message?.slice(0, 100),
+        );
         return NextResponse.json<ChatErrorResponse>(
-          { error: getErrorMessage(ChatErrorCode.RATE_LIMIT_EXCEEDED), code: ChatErrorCode.RATE_LIMIT_EXCEEDED, details: "OpenAI 429" },
-          { status: 429 }
+          {
+            error: getErrorMessage(ChatErrorCode.RATE_LIMIT_EXCEEDED),
+            code: ChatErrorCode.RATE_LIMIT_EXCEEDED,
+            details: "OpenAI 429",
+          },
+          { status: 429 },
         );
       }
     }
 
     // Handle empty response errors from AI SDK
-    if (error instanceof Error && error.message.includes("must contain either output text or tool calls")) {
-      console.warn(`⚠️ [${ChatErrorCode.EMPTY_RESPONSE}] Empty AI response (likely rate limited)`);
+    if (
+      error instanceof Error &&
+      error.message.includes("must contain either output text or tool calls")
+    ) {
+      console.warn(
+        `⚠️ [${ChatErrorCode.EMPTY_RESPONSE}] Empty AI response (likely rate limited)`,
+      );
       return NextResponse.json<ChatErrorResponse>(
-        { error: getErrorMessage(ChatErrorCode.EMPTY_RESPONSE), code: ChatErrorCode.EMPTY_RESPONSE, details: "Model returned empty content" },
-        { status: 503 }
+        {
+          error: getErrorMessage(ChatErrorCode.EMPTY_RESPONSE),
+          code: ChatErrorCode.EMPTY_RESPONSE,
+          details: "Model returned empty content",
+        },
+        { status: 503 },
       );
     }
 
     if (error instanceof Error) {
-      console.error(`🔴 [${ChatErrorCode.INTERNAL_ERROR}] Chat error:`, error.message);
+      console.error(
+        `🔴 [${ChatErrorCode.INTERNAL_ERROR}] Chat error:`,
+        error.message,
+      );
       return NextResponse.json<ChatErrorResponse>(
-        { error: getErrorMessage(ChatErrorCode.INTERNAL_ERROR), code: ChatErrorCode.INTERNAL_ERROR, details: error.message },
-        { status: 500 }
+        {
+          error: getErrorMessage(ChatErrorCode.INTERNAL_ERROR),
+          code: ChatErrorCode.INTERNAL_ERROR,
+          details: error.message,
+        },
+        { status: 500 },
       );
     }
 
     console.error(`🔴 [${ChatErrorCode.INTERNAL_ERROR}] Unknown error`);
     return NextResponse.json<ChatErrorResponse>(
-      { error: getErrorMessage(ChatErrorCode.INTERNAL_ERROR), code: ChatErrorCode.INTERNAL_ERROR },
-      { status: 500 }
+      {
+        error: getErrorMessage(ChatErrorCode.INTERNAL_ERROR),
+        code: ChatErrorCode.INTERNAL_ERROR,
+      },
+      { status: 500 },
     );
   }
 }
@@ -462,17 +582,16 @@ OUTPUT FORMAT (use this AFTER getting skill_mapper results):
 ---
 [Ask if they want to explore a specific role, see matching jobs, or refine their profile]`;
 
-
 type UIPart = NonNullable<UIMessage["parts"]>[number];
 
 function attachUploadsToMessages(
   messages: ChatRequestPayload["messages"],
-  attachments: AttachmentPayload[]
+  attachments: AttachmentPayload[],
 ): UIMessage[] {
   if (!messages.length) {
     throw new AttachmentValidationError(
       "At least one message is required",
-      "missing_user_message"
+      "missing_user_message",
     );
   }
 
@@ -489,16 +608,19 @@ function attachUploadsToMessages(
   if (!lastUserMessage) {
     throw new AttachmentValidationError(
       "Attachments must accompany a user message",
-      "missing_user_message"
+      "missing_user_message",
     );
   }
 
   lastUserMessage.parts ??= [];
   const existingAttachmentUrls = new Set(
     lastUserMessage.parts
-      ?.filter((part): part is UIPart & { type: "file"; url?: string } => part.type === "file")
+      ?.filter(
+        (part): part is UIPart & { type: "file"; url?: string } =>
+          part.type === "file",
+      )
       .map((part) => part.url)
-      .filter((url): url is string => typeof url === "string")
+      .filter((url): url is string => typeof url === "string"),
   );
   for (const attachment of attachments) {
     if (existingAttachmentUrls.has(attachment.url)) {
@@ -518,7 +640,9 @@ function attachUploadsToMessages(
   return cloned;
 }
 
-function normalizeParts(message: ChatRequestPayload["messages"][number]): UIPart[] {
+function normalizeParts(
+  message: ChatRequestPayload["messages"][number],
+): UIPart[] {
   if (message.parts && message.parts.length > 0) {
     return message.parts.map((part) => ({ ...part })) as UIPart[];
   }
@@ -542,13 +666,17 @@ function findLastUserMessage(messages: UIMessage[]): UIMessage | null {
 
 const SUPPORTED_ROLES = new Set(["user", "assistant", "system", "tool"]);
 
-function sanitizeUiMessages(messages: ChatRequestPayload["messages"]): ChatRequestPayload["messages"] {
+function sanitizeUiMessages(
+  messages: ChatRequestPayload["messages"],
+): ChatRequestPayload["messages"] {
   return messages
     .filter((message) => SUPPORTED_ROLES.has(message.role))
     .map((message) => sanitizeUiMessage(message));
 }
 
-function sanitizeUiMessage(message: ChatRequestPayload["messages"][number]): ChatRequestPayload["messages"][number] {
+function sanitizeUiMessage(
+  message: ChatRequestPayload["messages"][number],
+): ChatRequestPayload["messages"][number] {
   if (!message.parts || message.parts.length === 0) {
     return { ...message };
   }
@@ -567,7 +695,7 @@ function sanitizeUiMessage(message: ChatRequestPayload["messages"][number]): Cha
   }
 
   if (!sanitized.parts) {
-    delete sanitized.parts;
+    sanitized.parts = undefined;
   }
 
   return sanitized;
@@ -630,7 +758,9 @@ type JobSearchToolPart = {
   output?: unknown;
 };
 
-function isDocumentToolPart(part: DocumentToolPart): part is DocumentToolPart & { type: string } {
+function isDocumentToolPart(
+  part: DocumentToolPart,
+): part is DocumentToolPart & { type: string } {
   return Boolean(part.type === DOCUMENT_PART_TYPE && part.output);
 }
 
@@ -654,7 +784,9 @@ function summarizeDocumentPart(part: DocumentToolPart): string | null {
   return `Generated ${readableType}.`;
 }
 
-function isJobSearchToolPart(part: JobSearchToolPart): part is JobSearchToolPart & {
+function isJobSearchToolPart(
+  part: JobSearchToolPart,
+): part is JobSearchToolPart & {
   type: string;
   output: JobResponse;
 } {
@@ -667,7 +799,9 @@ type ResumeMetaPayload = {
   generalKeywords?: string[];
 };
 
-function extractLatestResumeMeta(messages: UIMessage[]): ResumeMetaPayload | null {
+function extractLatestResumeMeta(
+  messages: UIMessage[],
+): ResumeMetaPayload | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (!message.parts?.length) {
@@ -677,7 +811,10 @@ function extractLatestResumeMeta(messages: UIMessage[]): ResumeMetaPayload | nul
       if (part.type !== "text") {
         continue;
       }
-      const payload = parseTaggedJsonPayload<ResumeMetaPayload>(String((part as { text?: string }).text ?? ""), "resume-meta");
+      const payload = parseTaggedJsonPayload<ResumeMetaPayload>(
+        String((part as { text?: string }).text ?? ""),
+        "resume-meta",
+      );
       if (payload) {
         return payload;
       }
@@ -686,7 +823,10 @@ function extractLatestResumeMeta(messages: UIMessage[]): ResumeMetaPayload | nul
   return null;
 }
 
-function parseTaggedJsonPayload<T = unknown>(text: string, tag: string): T | null {
+function parseTaggedJsonPayload<T = unknown>(
+  text: string,
+  tag: string,
+): T | null {
   if (!text) {
     return null;
   }

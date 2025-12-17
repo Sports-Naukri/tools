@@ -1,11 +1,11 @@
 /**
  * Follow-up Suggestions API
- * 
+ *
  * Generates contextual follow-up questions that users might want to ask
  * after receiving an AI response. Shows 2 suggestions as clickable chips.
- * 
+ *
  * Uses AI to analyze the conversation context and suggest relevant next steps.
- * 
+ *
  * @route POST /api/chat/suggestions
  * @module app/api/chat/suggestions/route
  */
@@ -61,20 +61,24 @@ const SUGGESTION_COUNT = 2;
 
 /**
  * Generates follow-up question suggestions based on conversation context.
- * 
+ *
  * @param req - Request with conversation context
  * @returns Array of {id, text} suggestion objects
  */
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "OpenAI API key is not configured" }, { status: 500 });
+      return NextResponse.json(
+        { error: "OpenAI API key is not configured" },
+        { status: 500 },
+      );
     }
 
     const json = await req.json();
     const payload = suggestionRequestSchema.parse(json);
 
-    const model = CHAT_MODELS.find((m) => m.id === payload.modelId) || CHAT_MODELS[0];
+    const model =
+      CHAT_MODELS.find((m) => m.id === payload.modelId) || CHAT_MODELS[0];
 
     // System prompt instructs AI to generate user-perspective follow-ups
     const systemPrompt = `You are an assistant that creates short, proactive follow-up prompts for a sports career coach chat.
@@ -99,7 +103,9 @@ Assistant response: ${payload.assistantText}`;
     });
 
     // Log token usage for monitoring
-    console.log(`💡 Suggestions | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"}`);
+    console.log(
+      `💡 Suggestions | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"}`,
+    );
 
     // Parse response: split by newlines, clean up, format as objects
     const suggestions = text
@@ -127,4 +133,3 @@ Assistant response: ${payload.assistantText}`;
     return NextResponse.json({ suggestions: [] }, { status: 200 });
   }
 }
-

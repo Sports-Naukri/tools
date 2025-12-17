@@ -20,7 +20,10 @@ export async function POST(request: Request) {
     const body = (await request.json()) as SkillPreviewRequest;
     const skills = Array.isArray(body.skills) ? body.skills : [];
     if (skills.length === 0) {
-      return NextResponse.json({ error: "Provide at least one skill keyword." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Provide at least one skill keyword." },
+        { status: 400 },
+      );
     }
 
     const normalizedSkills = Array.from(
@@ -28,12 +31,15 @@ export async function POST(request: Request) {
         skills
           .map((skill) => skill.trim())
           .filter((skill) => skill.length > 1)
-          .slice(0, MAX_SKILLS)
-      )
+          .slice(0, MAX_SKILLS),
+      ),
     );
 
     if (normalizedSkills.length === 0) {
-      return NextResponse.json({ error: "No valid skills received." }, { status: 400 });
+      return NextResponse.json(
+        { error: "No valid skills received." },
+        { status: 400 },
+      );
     }
 
     const limit = clamp(Math.round(body.limit ?? 3), MIN_LIMIT, MAX_LIMIT);
@@ -61,17 +67,23 @@ export async function POST(request: Request) {
             count: 0,
             total: 0,
             jobs: [],
-            message: error instanceof Error ? error.message : "Failed to fetch jobs",
+            message:
+              error instanceof Error ? error.message : "Failed to fetch jobs",
           };
         }
-      })
+      }),
     );
 
     return NextResponse.json({ success: true, results });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to fetch skill previews" },
-      { status: 500 }
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to fetch skill previews",
+      },
+      { status: 500 },
     );
   }
 }

@@ -1,17 +1,17 @@
 /**
  * Model Picker Component
- * 
+ *
  * Allows users to switch between different AI models (e.g., GPT-4o, GPT-4o-mini).
  * Displays model capabilities, status (locked/enabled), and active selection.
- * 
+ *
  * @module components/chat/ModelPicker
  * @see {@link ../../lib/chat/constants.ts} for model definitions
  */
 
 "use client";
 
-import { Lock, Sparkles } from "lucide-react";
 import clsx from "clsx";
+import { Lock, Sparkles } from "lucide-react";
 
 import { CHAT_MODELS } from "@/lib/chat/constants";
 
@@ -29,7 +29,9 @@ export function ModelPicker({ modelId, onChange }: ModelPickerProps) {
     <div className="rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Model</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+            Model
+          </p>
           <p className="text-sm text-slate-500">Choose the response style</p>
         </div>
         <Sparkles className="h-5 w-5 text-[#007FF6]" />
@@ -44,12 +46,16 @@ export function ModelPicker({ modelId, onChange }: ModelPickerProps) {
               onClick={() => model.isEnabled && onChange(model.id)}
               className={clsx(
                 "flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition",
-                active ? "border-[#007FF6] bg-[#E6F1FF]" : "border-slate-100 bg-slate-50",
-                !model.isEnabled && "cursor-not-allowed opacity-60"
+                active
+                  ? "border-[#007FF6] bg-[#E6F1FF]"
+                  : "border-slate-100 bg-slate-50",
+                !model.isEnabled && "cursor-not-allowed opacity-60",
               )}
             >
               <div>
-                <p className="text-sm font-semibold text-slate-900">{model.name}</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {model.name}
+                </p>
                 <p className="text-xs text-slate-500">{model.description}</p>
               </div>
               {!model.isEnabled ? (
@@ -57,9 +63,13 @@ export function ModelPicker({ modelId, onChange }: ModelPickerProps) {
                   <Lock className="h-3.5 w-3.5" /> Locked
                 </span>
               ) : active ? (
-                <span className="rounded-full bg-[#007FF6] px-3 py-1 text-xs font-semibold text-white">Selected</span>
+                <span className="rounded-full bg-[#007FF6] px-3 py-1 text-xs font-semibold text-white">
+                  Selected
+                </span>
               ) : (
-                <span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500">Available</span>
+                <span className="rounded-full bg-white px-3 py-1 text-xs text-slate-500">
+                  Available
+                </span>
               )}
             </button>
           );

@@ -1,21 +1,21 @@
 /**
  * Tools Showcase Section
- * 
+ *
  * Displays the grid of available AI tools (Cards).
  * Features:
  * - Mouse-tracking gradient hover effects (spotlight effect)
  * - Scroll-triggered reveal animations
  * - Responsive grid layout (1 col mobile, 2 col desktop)
  * - Reduced motion support
- * 
+ *
  * @module components/ToolsSection
  */
 
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useCallback, useEffect, useRef } from "react";
 
 type Tool = {
   title: string;
@@ -46,13 +46,14 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tools.length is the only dependency that matters for cleanup
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
     const prefersReducedMotion = window.matchMedia(
-      prefersReducedMotionQuery
+      prefersReducedMotionQuery,
     ).matches;
     const pointerFine = window.matchMedia(finePointerQuery).matches;
 
@@ -82,16 +83,17 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
     };
   }, [tools.length]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tools.length determines when to re-run observers
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
     const prefersReducedMotion = window.matchMedia(
-      prefersReducedMotionQuery
+      prefersReducedMotionQuery,
     ).matches;
     const revealItems = cardRefs.current.filter(
-      (card): card is HTMLDivElement => Boolean(card)
+      (card): card is HTMLDivElement => Boolean(card),
     );
 
     if (!revealItems.length) {
@@ -117,7 +119,7 @@ export function ToolsSection({ tools }: ToolsSectionProps) {
       {
         threshold: 0.25,
         rootMargin: "0px 0px -80px 0px",
-      }
+      },
     );
 
     revealItems.forEach((item, index) => {

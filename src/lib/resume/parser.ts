@@ -1,21 +1,21 @@
 /**
  * Resume File Parser
- * 
+ *
  * Client-side resume parsing for PDF, DOCX, DOC, and TXT files.
  * Extracts raw text from uploaded resume files using browser-based libraries.
- * 
+ *
  * Supported Formats:
  * - PDF: Uses pdfjs-dist (Mozilla's PDF.js)
  * - DOCX: Uses mammoth.js for HTML conversion
  * - DOC: Basic text decoding (legacy format)
  * - TXT: Plain text decoding
- * 
+ *
  * Flow:
  * 1. User uploads resume file
  * 2. parseResumeFile() extracts raw text
  * 3. Text sent to /api/resume/extract for AI processing
  * 4. Extracted profile stored in IndexedDB
- * 
+ *
  * @module lib/resume/parser
  * @see {@link ./types.ts} for data structures
  * @see {@link ../../components/resume/ResumeUploadDialog.tsx} for UI
@@ -68,7 +68,7 @@ const WHITESPACE_REGEX = /\s+/g;
 
 /**
  * Checks if a file is a supported resume format.
- * 
+ *
  * @param file - File to check
  * @returns True if file type is supported
  */
@@ -89,18 +89,18 @@ export function isSupportedResumeFile(file: File): boolean {
     return false;
   }
 
-  // If browser didn't detect MIME type, rely on extension. 
+  // If browser didn't detect MIME type, rely on extension.
   // If it did, ensure it matches expected family (optional, but safer).
   return true;
 }
 
 /**
  * Parses a resume file and extracts raw text.
- * 
+ *
  * @param file - Resume file (PDF, DOCX, DOC, or TXT)
  * @returns Parsed resume with text, word count, and reading time
  * @throws {Error} If file format is unsupported or parsing fails
- * 
+ *
  * @example
  * ```ts
  * const file = event.target.files[0];
@@ -115,7 +115,9 @@ export async function parseResumeFile(file: File): Promise<ParsedResume> {
   }
 
   if (!isSupportedResumeFile(file)) {
-    throw new Error("Unsupported resume format. Upload a PDF, DOCX, DOC, or TXT file.");
+    throw new Error(
+      "Unsupported resume format. Upload a PDF, DOCX, DOC, or TXT file.",
+    );
   }
 
   const arrayBuffer = await file.arrayBuffer();
@@ -126,7 +128,8 @@ export async function parseResumeFile(file: File): Promise<ParsedResume> {
   if (file.type === "application/pdf" || extension === "pdf") {
     rawText = await parsePdf(arrayBuffer);
   } else if (
-    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     extension === "docx"
   ) {
     rawText = await parseDocx(arrayBuffer);
@@ -138,7 +141,8 @@ export async function parseResumeFile(file: File): Promise<ParsedResume> {
 
   const text = normalizeWhitespace(rawText);
   const wordCount = text ? text.split(" ").length : 0;
-  const readingTimeMinutes = wordCount === 0 ? 0 : Math.max(1, Math.round(wordCount / 200));
+  const readingTimeMinutes =
+    wordCount === 0 ? 0 : Math.max(1, Math.round(wordCount / 200));
 
   return {
     text,
@@ -166,14 +170,16 @@ async function parsePdf(arrayBuffer: ArrayBuffer): Promise<string> {
     data: arrayBuffer,
     useWorkerFetch: false,
     isEvalSupported: false,
-    disableWorker: true
+    disableWorker: true,
   });
   const pdf = await loadingTask.promise;
   let combined = "";
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
-    const pageText = content.items.map((item) => extractText(item as TextItem | string | undefined)).join(" ");
+    const pageText = content.items
+      .map((item) => extractText(item as TextItem | string | undefined))
+      .join(" ");
     combined += `${pageText}\n`;
   }
   return combined;

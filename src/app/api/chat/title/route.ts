@@ -1,11 +1,11 @@
 /**
  * Conversation Title Generation API
- * 
+ *
  * Generates short, descriptive titles for chat conversations based on
  * the first user message. Uses AI to create concise 5-6 word titles.
- * 
+ *
  * Called after the first message in a new conversation to auto-title it.
- * 
+ *
  * @route POST /api/chat/title
  * @module app/api/chat/title/route
  */
@@ -52,7 +52,7 @@ const titleRequestSchema = z.object({
 
 /**
  * Generates a conversation title from the first user message.
- * 
+ *
  * @param req - Request with { message: string, modelId?: string }
  * @returns { title: string } or error response
  */
@@ -62,7 +62,10 @@ export async function POST(req: Request) {
     const { message, modelId } = titleRequestSchema.parse(json);
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "OpenAI API key is not configured" }, { status: 500 });
+      return NextResponse.json(
+        { error: "OpenAI API key is not configured" },
+        { status: 500 },
+      );
     }
 
     // Use a fast model for title generation
@@ -85,12 +88,16 @@ User: "I need a cover letter for a sports analyst role" -> Sports Analyst Cover 
     const title = text.trim();
 
     // Log token usage for monitoring
-    console.log(`🏷️ Title | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"}`);
+    console.log(
+      `🏷️ Title | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"}`,
+    );
 
     return NextResponse.json({ title });
   } catch (error) {
     console.error("Title generation error:", error);
-    return NextResponse.json({ error: "Failed to generate title" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to generate title" },
+      { status: 500 },
+    );
   }
 }
-

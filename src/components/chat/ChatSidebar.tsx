@@ -1,6 +1,6 @@
 /**
  * Chat Sidebar Component
- * 
+ *
  * The main navigation sidebar for the chat interface.
  * Features:
  * - Conversation history list with search
@@ -8,18 +8,32 @@
  * - Daily usage quota visualization
  * - Resume profile management section
  * - Collapsible state with drag-to-resize functionality
- * 
+ *
  * @module components/chat/ChatSidebar
  */
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { MessageSquare, Plus, Search, PanelLeftClose, PanelLeftOpen, Trash2, Lock } from "lucide-react";
 import clsx from "clsx";
+import {
+  Lock,
+  MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-import type { UsageSnapshot } from "@/lib/chat/types";
 import type { StoredConversation } from "@/lib/chat/storage";
+import type { UsageSnapshot } from "@/lib/chat/types";
 import { formatDurationShort } from "@/lib/time";
 import { ResumeSection } from "./ResumeSection";
 
@@ -28,7 +42,8 @@ const DEFAULT_EXPANDED_WIDTH = 320;
 const MIN_EXPANDED_WIDTH = 260;
 const MAX_EXPANDED_WIDTH = 520;
 const COLLAPSED_WIDTH = 60;
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
 
 type ChatSidebarProps = {
   usage: UsageSnapshot | null;
@@ -62,14 +77,19 @@ export function ChatSidebar({
       return DEFAULT_EXPANDED_WIDTH;
     }
     const value = Number.parseInt(stored, 10);
-    return Number.isFinite(value) ? clamp(value, MIN_EXPANDED_WIDTH, MAX_EXPANDED_WIDTH) : DEFAULT_EXPANDED_WIDTH;
+    return Number.isFinite(value)
+      ? clamp(value, MIN_EXPANDED_WIDTH, MAX_EXPANDED_WIDTH)
+      : DEFAULT_EXPANDED_WIDTH;
   });
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+    window.localStorage.setItem(
+      SIDEBAR_WIDTH_STORAGE_KEY,
+      String(sidebarWidth),
+    );
   }, [sidebarWidth]);
 
   // Filter conversations based on search query
@@ -112,7 +132,11 @@ export function ChatSidebar({
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const delta = moveEvent.clientX - startX;
-        const nextWidth = clamp(startWidth + delta, MIN_EXPANDED_WIDTH, MAX_EXPANDED_WIDTH);
+        const nextWidth = clamp(
+          startWidth + delta,
+          MIN_EXPANDED_WIDTH,
+          MAX_EXPANDED_WIDTH,
+        );
         setSidebarWidth(nextWidth);
       };
 
@@ -126,33 +150,44 @@ export function ChatSidebar({
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
     },
-    [isCollapsed, sidebarWidth]
+    [isCollapsed, sidebarWidth],
   );
 
   return (
     <aside
       style={{ width: `${isCollapsed ? COLLAPSED_WIDTH : sidebarWidth}px` }}
       className={clsx(
-        "relative flex h-full flex-col bg-[#F9F9F9] border-r border-slate-200 transition-all duration-300 ease-in-out"
+        "relative flex h-full flex-col bg-[#F9F9F9] border-r border-slate-200 transition-all duration-300 ease-in-out",
       )}
     >
       <div className="p-4 pb-2">
-        <div className={clsx("flex items-center mb-6", isCollapsed ? "justify-center" : "justify-between px-2")}>
+        <div
+          className={clsx(
+            "flex items-center mb-6",
+            isCollapsed ? "justify-center" : "justify-between px-2",
+          )}
+        >
           {!isCollapsed && (
             <div className="flex items-center gap-2 text-slate-700 font-semibold whitespace-nowrap overflow-hidden">
               <span>Sports Naukri</span>
             </div>
           )}
           <button
+            type="button"
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="text-slate-500 hover:text-slate-700 transition-colors"
             title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {isCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+            {isCollapsed ? (
+              <PanelLeftOpen className="h-5 w-5" />
+            ) : (
+              <PanelLeftClose className="h-5 w-5" />
+            )}
           </button>
         </div>
 
         <button
+          type="button"
           onClick={onNewChat}
           disabled={isDailyLimitReached}
           className={clsx(
@@ -160,12 +195,18 @@ export function ChatSidebar({
             isCollapsed ? "h-8 w-8 p-0" : "w-full px-4 py-2.5",
             isDailyLimitReached
               ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-              : "bg-[#006dff] text-white hover:bg-[#0056cc]"
+              : "bg-[#006dff] text-white hover:bg-[#0056cc]",
           )}
           title={isDailyLimitReached ? "Daily limit reached" : "New Chat"}
         >
-          {isDailyLimitReached ? <Lock className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {!isCollapsed && <span>{isDailyLimitReached ? "Limit Reached" : "New Chat"}</span>}
+          {isDailyLimitReached ? (
+            <Lock className="h-4 w-4" />
+          ) : (
+            <Plus className="h-4 w-4" />
+          )}
+          {!isCollapsed && (
+            <span>{isDailyLimitReached ? "Limit Reached" : "New Chat"}</span>
+          )}
         </button>
 
         {!isCollapsed && (
@@ -196,30 +237,34 @@ export function ChatSidebar({
                 "group relative flex items-center rounded-lg transition-colors",
                 conversation.id === activeConversationId
                   ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-600 hover:bg-slate-200/50"
+                  : "text-slate-600 hover:bg-slate-200/50",
               )}
             >
               <button
+                type="button"
                 onClick={() => onSelectConversation(conversation.id)}
                 className={clsx(
                   "flex-1 text-left text-sm py-2",
-                  isCollapsed ? "flex justify-center items-center h-10 w-10" : "px-3"
+                  isCollapsed
+                    ? "flex justify-center items-center h-10 w-10"
+                    : "px-3",
                 )}
                 title={conversation.title || "Untitled conversation"}
               >
                 {isCollapsed ? (
                   <MessageSquare className="h-4 w-4" />
+                ) : conversation.title ? (
+                  <span className="line-clamp-1 pr-6">
+                    {conversation.title}
+                  </span>
                 ) : (
-                  conversation.title ? (
-                    <span className="line-clamp-1 pr-6">{conversation.title}</span>
-                  ) : (
-                    <div className="h-4 w-24 bg-slate-200 rounded animate-pulse" />
-                  )
+                  <div className="h-4 w-24 bg-slate-200 rounded animate-pulse" />
                 )}
               </button>
 
               {!isCollapsed && (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onDeleteConversation(conversation.id);
@@ -234,7 +279,9 @@ export function ChatSidebar({
           ))}
           {visibleConversations.length === 0 && !isCollapsed && (
             <div className="px-3 py-4 text-xs text-slate-500">
-              {searchQuery ? "No conversations match your search." : "You have no recent conversations."}
+              {searchQuery
+                ? "No conversations match your search."
+                : "You have no recent conversations."}
             </div>
           )}
         </div>
@@ -244,26 +291,36 @@ export function ChatSidebar({
       <ResumeSection isCollapsed={isCollapsed} />
 
       {usage && (
-        <div className={clsx("border-t border-slate-200 bg-white", isCollapsed ? "p-2" : "p-4")}>
+        <div
+          className={clsx(
+            "border-t border-slate-200 bg-white",
+            isCollapsed ? "p-2" : "p-4",
+          )}
+        >
           {!isCollapsed ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-medium text-slate-600">
                 <span>Daily Conversations</span>
-                <span>{usage.daily.remaining} / {usage.daily.limit}</span>
+                <span>
+                  {usage.daily.remaining} / {usage.daily.limit}
+                </span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                 <div
                   className={clsx(
                     "h-full transition-all duration-500 ease-out",
-                    usage.daily.remaining === 0 ? "bg-red-500" :
-                      usage.daily.remaining < 2 ? "bg-amber-500" : "bg-[#006dff]"
+                    usage.daily.remaining === 0
+                      ? "bg-red-500"
+                      : usage.daily.remaining < 2
+                        ? "bg-amber-500"
+                        : "bg-[#006dff]",
                   )}
-                  style={{ width: `${(usage.daily.remaining / usage.daily.limit) * 100}%` }}
+                  style={{
+                    width: `${(usage.daily.remaining / usage.daily.limit) * 100}%`,
+                  }}
                 />
               </div>
-              <p className="text-[10px] text-slate-400">
-                {dailyResetLabel}
-              </p>
+              <p className="text-[10px] text-slate-400">{dailyResetLabel}</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-1">
@@ -279,8 +336,11 @@ export function ChatSidebar({
                   <path
                     className={clsx(
                       "transition-all duration-500 ease-out",
-                      usage.daily.remaining === 0 ? "text-red-500" :
-                        usage.daily.remaining < 5 ? "text-amber-500" : "text-[#006dff]"
+                      usage.daily.remaining === 0
+                        ? "text-red-500"
+                        : usage.daily.remaining < 5
+                          ? "text-amber-500"
+                          : "text-[#006dff]",
                     )}
                     strokeDasharray={`${(usage.daily.remaining / usage.daily.limit) * 100}, 100`}
                     d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
@@ -306,4 +366,3 @@ export function ChatSidebar({
     </aside>
   );
 }
-

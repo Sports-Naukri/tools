@@ -1,18 +1,18 @@
 /**
  * Server-Side Rate Limiter
- * 
+ *
  * In-memory rate limiting for API requests. Enforces two independent limits:
  * 1. Daily Conversation Limit - Max new conversations per IP per day (resets at midnight)
  * 2. Per-Conversation Message Limit - Max messages per conversation (never resets)
- * 
+ *
  * Architecture:
  * - Uses a global Map for in-memory storage (persists across requests in Node.js)
  * - Counters use optimistic locking pattern: check → process → confirm
  * - Daily limits reset at midnight in configured timezone (default: Asia/Kolkata)
  * - Per-conversation limits use 30-day TTL to prevent memory bloat
- * 
+ *
  * Note: This is in-memory storage and resets on server restart/redeploy.
- * 
+ *
  * @module lib/rateLimiter
  * @see {@link ./chat/constants.ts} for limit values
  * @see {@link ./ip.ts} for IP extraction
@@ -21,7 +21,10 @@
 
 import { DateTime } from "luxon";
 
-import { DAILY_CHAT_LIMIT, MESSAGES_PER_CHAT_LIMIT } from "@/lib/chat/constants";
+import {
+  DAILY_CHAT_LIMIT,
+  MESSAGES_PER_CHAT_LIMIT,
+} from "@/lib/chat/constants";
 
 // Log initialization for debugging (appears in server logs)
 console.log("⚡ RateLimiter init | Mode: in-memory");
@@ -42,13 +45,15 @@ type MemoryEntry = {
 
 /**
  * Global singleton store for rate limit counters.
- * 
+ *
  * Uses the global object to persist across hot reloads in development
  * and across different API route handlers in production.
- * 
+ *
  * Note: In Edge runtime, this only works per-isolate (not globally persistent).
  */
-const globalStore = global as unknown as { _rateLimitStore: Map<string, MemoryEntry> };
+const globalStore = global as unknown as {
+  _rateLimitStore: Map<string, MemoryEntry>;
+};
 if (!globalStore._rateLimitStore) {
   globalStore._rateLimitStore = new Map<string, MemoryEntry>();
 }
@@ -65,10 +70,12 @@ const memoryStore = globalStore._rateLimitStore;
  */
 const configuredTimezone = process.env.RATE_LIMIT_TIMEZONE || "Asia/Kolkata";
 const RESET_TIMEZONE = (() => {
-  const probe = DateTime.now().setZone(configuredTimezone, { keepLocalTime: false });
+  const probe = DateTime.now().setZone(configuredTimezone, {
+    keepLocalTime: false,
+  });
   if (!probe.isValid) {
     console.warn(
-      `⚠️ RateLimiter: Invalid timezone "${configuredTimezone}", using UTC`
+      `⚠️ RateLimiter: Invalid timezone "${configuredTimezone}", using UTC`,
     );
     return "UTC";
   }
@@ -85,14 +92,19 @@ type ResetMetadata = {
   secondsUntilReset: number | null;
 };
 
-const getLimitZoneNow = () => DateTime.now().setZone(RESET_TIMEZONE, { keepLocalTime: false });
+const getLimitZoneNow = () =>
+  DateTime.now().setZone(RESET_TIMEZONE, { keepLocalTime: false });
 
 const getNextMidnightReset = (): StrictResetMetadata => {
   const zonedNow = getLimitZoneNow();
   const nextMidnight = zonedNow.startOf("day").plus({ days: 1 });
-  const secondsUntilReset = Math.max(1, Math.ceil(nextMidnight.diff(zonedNow, "seconds").seconds));
+  const secondsUntilReset = Math.max(
+    1,
+    Math.ceil(nextMidnight.diff(zonedNow, "seconds").seconds),
+  );
   const resetInstant = nextMidnight.toUTC();
-  const resetIso = resetInstant.toISO() ?? new Date(resetInstant.toMillis()).toISOString();
+  const resetIso =
+    resetInstant.toISO() ?? new Date(resetInstant.toMillis()).toISOString();
   return {
     resetAt: resetIso,
     secondsUntilReset,
@@ -129,14 +141,19 @@ export class RateLimitError extends Error {
   code: "CONVERSATION_LIMIT" | "CHAT_LIMIT";
   remaining: number;
 
-  constructor(message: string, code: RateLimitError["code"], remaining: number) {
+  constructor(
+    message: string,
+    code: RateLimitError["code"],
+    remaining: number,
+  ) {
     super(message);
     this.code = code;
     this.remaining = remaining;
   }
 }
 
-const conversationKey = (ip: string, dateKey: string) => `chat:daily:${ip}:${dateKey}`;
+const conversationKey = (ip: string, dateKey: string) =>
+  `chat:daily:${ip}:${dateKey}`;
 const chatKey = (ip: string, conversationId: string) =>
   `chat:conversation:${ip}:${conversationId}`;
 
@@ -156,7 +173,7 @@ export function checkCanStartConversation(ip: string) {
     throw new RateLimitError(
       "Daily conversation limit reached",
       "CONVERSATION_LIMIT",
-      0
+      0,
     );
   }
 
@@ -194,7 +211,7 @@ export function checkCanSendMessage(ip: string, conversationId: string) {
     throw new RateLimitError(
       "Message limit for this chat reached",
       "CHAT_LIMIT",
-      0
+      0,
     );
   }
 
@@ -234,7 +251,10 @@ export function getUsageSnapshot(ip: string, conversationId?: string) {
   const midnightReset = getNextMidnightReset();
 
   let chatUsage = 0;
-  const chatResetMeta: ResetMetadata = { resetAt: null, secondsUntilReset: null }; // No reset for chat limits!
+  const chatResetMeta: ResetMetadata = {
+    resetAt: null,
+    secondsUntilReset: null,
+  }; // No reset for chat limits!
   if (conversationId) {
     const key = chatKey(ip, conversationId);
     chatUsage = getCounter(key);

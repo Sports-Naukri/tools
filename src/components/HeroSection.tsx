@@ -1,6 +1,6 @@
 /**
  * Hero Section Component
- * 
+ *
  * The main fold of the landing page.
  * Features:
  * - Headline and subheadline
@@ -8,7 +8,7 @@
  * - Secondary CTA (SportsNaukri.com link)
  * - Background gradient effects
  * - "Scroll" indicator button
- * 
+ *
  * @module components/HeroSection
  */
 
@@ -38,7 +38,8 @@ export function HeroSection({ onScrollClick }: HeroSectionProps) {
                 width={15}
                 height={15}
               >
-                <path d="M381.2,180.9c4,0,6-2.3,7-6c10.4-55.9,9.7-57.3,68-68.3c4-0.7,6.4-3,6.4-7c0-4-2.3-6.4-6.4-7
+                <path
+                  d="M381.2,180.9c4,0,6-2.3,7-6c10.4-55.9,9.7-57.3,68-68.3c4-0.7,6.4-3,6.4-7c0-4-2.3-6.4-6.4-7
                   c-57.9-11.7-56.2-13.1-68-68.3c-1-3.7-3-6-7-6c-4,0-6,2.3-7,6c-11.7,55.2-9.7,56.6-68,68.3c-3.7,0.7-6.4,3-6.4,7c0,4,2.7,6.4,6.4,7
                   c58.3,11.7,57.6,12.4,68,68.3C375.2,178.5,377.2,180.9,381.2,180.9z M219.2,411.2c6.4,0,10.7-4,11.4-10
                   c12.1-89.4,15.1-89.4,107.5-107.1c6-1,10.4-5,10.4-11.4c0-6-4.4-10.4-10.4-11.4c-92.4-12.7-95.8-15.7-107.5-106.8
@@ -46,7 +47,8 @@ export function HeroSection({ onScrollClick }: HeroSectionProps) {
                   c0,6.7,4.4,10.4,11.7,11.4c91.1,14.7,95.1,17.1,106.1,106.5C208.8,407.2,213.2,411.2,219.2,411.2z M446.2,781.9
                   c8.7,0,15.1-6.4,16.7-15.4c23.8-183.5,49.6-211.3,231-231.4c9.4-1,15.7-8,15.7-16.7c0-8.7-6.4-15.4-15.7-16.7
                   c-181.5-20.1-207.3-47.9-231-231.4c-1.7-9-8-15.1-16.7-15.1c-8.7,0-15.1,6-16.4,15.1c-23.8,183.5-49.9,211.3-231,231.4
-                  c-9.7,1.3-16.1,8-16.1,16.7c0,8.7,6.4,15.7,16.1,16.7c180.8,23.8,205.9,48.2,231,231.4C431.1,775.5,437.5,781.9,446.2,781.9z"/>
+                  c-9.7,1.3-16.1,8-16.1,16.7c0,8.7,6.4,15.7,16.1,16.7c180.8,23.8,205.9,48.2,231,231.4C431.1,775.5,437.5,781.9,446.2,781.9z"
+                />
               </svg>
             </span>
           </div>
@@ -54,7 +56,8 @@ export function HeroSection({ onScrollClick }: HeroSectionProps) {
             Find Your Dream <span className="gradient-text">Sports Career</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-gray-700 sm:text-xl">
-            Connect with top sports organizations and discover opportunities that match your passion for athletics and wellness.
+            Connect with top sports organizations and discover opportunities
+            that match your passion for athletics and wellness.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Link
@@ -83,7 +86,15 @@ export function HeroSection({ onScrollClick }: HeroSectionProps) {
               rel="noopener noreferrer"
             >
               <span className="inline-flex text-base" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M480-80q-82 0-155-31.5t-127.5-86Q143-252 111.5-325T80-480q0-83 31.5-155.5t86-127Q252-817 325-848.5T480-880q83 0 155.5 31.5t127 86q54.5 54.5 86 127T880-480q0 82-31.5 155t-86 127.5q-54.5 54.5-127 86T480-80Zm0-82q26-36 45-75t31-83H404q12 44 31 83t45 75Zm-104-16q-18-33-31.5-68.5T322-320H204q29 50 72.5 87t99.5 55Zm208 0q56-18 99.5-55t72.5-87H638q-9 38-22.5 73.5T584-178ZM170-400h136q-3-20-4.5-39.5T300-480q0-21 1.5-40.5T306-560H170q-5 20-7.5 39.5T160-480q0 21 2.5 40.5T170-400Zm216 0h188q3-20 4.5-39.5T580-480q0-21-1.5-40.5T574-560H386q-3 20-4.5 39.5T380-480q0 21 1.5 40.5T386-400Zm268 0h136q5-20 7.5-39.5T800-480q0-21-2.5-40.5T790-560H654q3 20 4.5 39.5T660-480q0 21-1.5 40.5T654-400Zm-16-240h118q-29-50-72.5-87T584-782q18 33 31.5 68.5T638-640Zm-234 0h152q-12-44-31-83t-45-75q-26 36-45 75t-31 83Zm-200 0h118q9-38 22.5-73.5T376-782q-56 18-99.5 55T204-640Z" /></svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  height="24px"
+                  viewBox="0 -960 960 960"
+                  width="24px"
+                  fill="currentColor"
+                >
+                  <path d="M480-80q-82 0-155-31.5t-127.5-86Q143-252 111.5-325T80-480q0-83 31.5-155.5t86-127Q252-817 325-848.5T480-880q83 0 155.5 31.5t127 86q54.5 54.5 86 127T880-480q0 82-31.5 155t-86 127.5q-54.5 54.5-127 86T480-80Zm0-82q26-36 45-75t31-83H404q12 44 31 83t45 75Zm-104-16q-18-33-31.5-68.5T322-320H204q29 50 72.5 87t99.5 55Zm208 0q56-18 99.5-55t72.5-87H638q-9 38-22.5 73.5T584-178ZM170-400h136q-3-20-4.5-39.5T300-480q0-21 1.5-40.5T306-560H170q-5 20-7.5 39.5T160-480q0 21 2.5 40.5T170-400Zm216 0h188q3-20 4.5-39.5T580-480q0-21-1.5-40.5T574-560H386q-3 20-4.5 39.5T380-480q0 21 1.5 40.5T386-400Zm268 0h136q5-20 7.5-39.5T800-480q0-21-2.5-40.5T790-560H654q3 20 4.5 39.5T660-480q0 21-1.5 40.5T654-400Zm-16-240h118q-29-50-72.5-87T584-782q18 33 31.5 68.5T638-640Zm-234 0h152q-12-44-31-83t-45-75q-26 36-45 75t-31 83Zm-200 0h118q9-38 22.5-73.5T376-782q-56 18-99.5 55T204-640Z" />
+                </svg>
               </span>
               SportsNaukri.com
             </Link>

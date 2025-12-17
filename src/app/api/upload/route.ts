@@ -1,15 +1,15 @@
 /**
  * File Upload API
- * 
+ *
  * Handles file uploads for chat attachments. Files are stored locally
  * and a URL is returned for embedding in messages.
- * 
+ *
  * Features:
  * - File type validation (images, documents, text)
  * - File size limits (5MB max)
  * - Local file storage
  * - Environment-based upload disabling
- * 
+ *
  * @route POST /api/upload
  * @module app/api/upload/route
  * @see {@link ../../lib/blob.ts} for storage utilities
@@ -18,7 +18,7 @@
 
 import { NextResponse } from "next/server";
 
-import { uploadToBlob, BlobConfigError } from "@/lib/blob";
+import { BlobConfigError, uploadToBlob } from "@/lib/blob";
 import {
   ALLOWED_ATTACHMENT_TYPES,
   MAX_ATTACHMENT_FILE_SIZE,
@@ -36,9 +36,9 @@ export const runtime = "nodejs";
 
 /**
  * Uploads a file to local storage and returns the URL.
- * 
+ *
  * Request: multipart/form-data with "file" field
- * 
+ *
  * Response: {
  *   id: string,    // File pathname
  *   name: string,  // Original filename
@@ -49,20 +49,26 @@ export const runtime = "nodejs";
  */
 export async function POST(req: Request) {
   // Check if uploads are disabled via environment
-  const uploadsDisabled = process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
+  const uploadsDisabled =
+    process.env.NEXT_PUBLIC_ATTACHMENTS_DISABLED === "true";
   if (uploadsDisabled) {
     return NextResponse.json(
-      { error: "File uploads are disabled in this environment", code: "uploads_disabled" },
-      { status: 503 }
+      {
+        error: "File uploads are disabled in this environment",
+        code: "uploads_disabled",
+      },
+      { status: 503 },
     );
   }
 
   // Check for storage token
   if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
-    console.error("[/api/upload] Missing BLOB_READ_WRITE_TOKEN; reject request");
+    console.error(
+      "[/api/upload] Missing BLOB_READ_WRITE_TOKEN; reject request",
+    );
     return NextResponse.json(
       { error: "File uploads are not configured", code: "blob_token_missing" },
-      { status: 503 }
+      { status: 503 },
     );
   }
 
@@ -82,7 +88,10 @@ export async function POST(req: Request) {
 
   // Validate file type
   if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: "Unsupported file type" }, { status: 415 });
+    return NextResponse.json(
+      { error: "Unsupported file type" },
+      { status: 415 },
+    );
   }
 
   try {
@@ -120,7 +129,7 @@ export async function POST(req: Request) {
     if (error instanceof BlobConfigError) {
       return NextResponse.json(
         { error: error.message, code: "blob_token_missing" },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
@@ -130,7 +139,10 @@ export async function POST(req: Request) {
         message: error.message,
         stack: error.stack,
       });
-      return NextResponse.json({ ...basePayload, error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ...basePayload, error: error.message },
+        { status: 500 },
+      );
     }
 
     // Unknown error fallback
@@ -138,4 +150,3 @@ export async function POST(req: Request) {
     return NextResponse.json(basePayload, { status: 500 });
   }
 }
-

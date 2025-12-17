@@ -1,18 +1,18 @@
 /**
  * Skill Extraction from Resumes
- * 
+ *
  * Extracts skills from resume text using two strategies:
  * 1. Catalog matching: Match against SKILL_DEFINITIONS keywords
  * 2. Section parsing: Find "Skills" section and extract listed items
- * 
+ *
  * Algorithm:
  * - Normalize text and fuzzy match against skill catalog
  * - Calculate confidence scores based on keyword frequency and coverage
  * - Locate skills section in resume and parse individual skills
  * - Deduplicate and rank by confidence
- * 
+ *
  * Used by: Resume upload flow, AI profile extraction
- * 
+ *
  * @module lib/skills/extract
  * @see {@link ./catalog.ts} for skill definitions
  */
@@ -72,27 +72,32 @@ const TOKEN_SPLIT_REGEX = /[,;\|•\u2022\n]+/;
 
 /**
  * Extracts skills from resume text.
- * 
+ *
  * Combines catalog matching and section parsing for comprehensive extraction.
- * 
+ *
  * @param text - Resume text content
  * @param options - Extraction options
  * @returns Array of skill matches, sorted by confidence
- * 
+ *
  * @example
  * ```ts
  * const skills = extractSkillsFromResume(resumeText, { limit: 15 });
  * // Returns top 15 skills with confidence scores
  * ```
  */
-export function extractSkillsFromResume(text: string, options: ExtractSkillsOptions = {}): SkillMatch[] {
+export function extractSkillsFromResume(
+  text: string,
+  options: ExtractSkillsOptions = {},
+): SkillMatch[] {
   if (!text) {
     return [];
   }
 
   const normalized = normalize(text);
   const catalogMatches = extractCatalogSkills(normalized);
-  const knownLabels = new Set(catalogMatches.map((skill) => skill.label.toLowerCase()));
+  const knownLabels = new Set(
+    catalogMatches.map((skill) => skill.label.toLowerCase()),
+  );
   const sectionMatches = extractSectionSkills(text, knownLabels);
   const combined = [...catalogMatches, ...sectionMatches];
   const unique = dedupeSkills(combined);
@@ -111,13 +116,18 @@ export function extractSkillsFromResume(text: string, options: ExtractSkillsOpti
 function extractCatalogSkills(normalizedText: string): SkillMatch[] {
   const matches: SkillMatch[] = [];
   for (const def of SKILL_DEFINITIONS) {
-    const keywordMatches = def.keywords.filter((keyword) => normalizedText.includes(keyword));
+    const keywordMatches = def.keywords.filter((keyword) =>
+      normalizedText.includes(keyword),
+    );
     if (keywordMatches.length === 0) {
       continue;
     }
-    const frequencyScore = keywordMatches.reduce((score, keyword) => score + countOccurrences(normalizedText, keyword), 0);
+    const frequencyScore = keywordMatches.reduce(
+      (score, keyword) => score + countOccurrences(normalizedText, keyword),
+      0,
+    );
     const coverage = keywordMatches.length / def.keywords.length;
-    const weighted = (frequencyScore * 0.6 + coverage * 0.4) + (def.weight ?? 0);
+    const weighted = frequencyScore * 0.6 + coverage * 0.4 + (def.weight ?? 0);
     const confidence = Math.min(0.2 + weighted / 4, 0.98);
     matches.push({
       id: def.id,
@@ -131,7 +141,10 @@ function extractCatalogSkills(normalizedText: string): SkillMatch[] {
   return matches.sort((a, b) => b.confidence - a.confidence);
 }
 
-function extractSectionSkills(rawText: string, existingLabels: Set<string>): SkillMatch[] {
+function extractSectionSkills(
+  rawText: string,
+  existingLabels: Set<string>,
+): SkillMatch[] {
   const lines = rawText.split(/\r?\n/).map((line) => line.trim());
   const collected = new Set<string>();
   for (let i = 0; i < lines.length; i += 1) {
@@ -140,7 +153,9 @@ function extractSectionSkills(rawText: string, existingLabels: Set<string>): Ski
       continue;
     }
     const lower = line.toLowerCase();
-    const header = SKILL_SECTION_HEADERS.find((section) => lower.startsWith(section));
+    const header = SKILL_SECTION_HEADERS.find((section) =>
+      lower.startsWith(section),
+    );
     if (!header) {
       continue;
     }
@@ -153,7 +168,9 @@ function extractSectionSkills(rawText: string, existingLabels: Set<string>): Ski
         break;
       }
       const nextLower = nextLine.toLowerCase();
-      if (SECTION_STOP_WORDS.some((stopWord) => nextLower.startsWith(stopWord))) {
+      if (
+        SECTION_STOP_WORDS.some((stopWord) => nextLower.startsWith(stopWord))
+      ) {
         break;
       }
       buffer += `, ${nextLine}`;

@@ -1,13 +1,13 @@
 /**
  * Home Page Client Orchestrator
- * 
+ *
  * Orchestrates the landing page interactivity.
  * Features:
  * - Mobile menu toggle and state management
  * - Scroll locking when menu is open
  * - Smooth scrolling to specific sections ("Scroll" button)
  * - Responsiveness handlers (closing menu on resize)
- * 
+ *
  * @module components/HomePageClient
  */
 
@@ -100,7 +100,10 @@ export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
 
   const headerCta = useMemo(
     () => (
-      <button className="hidden items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary transition-transform duration-200 hover:text-primary-foreground md:inline-flex">
+      <button
+        type="button"
+        className="hidden items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary transition-transform duration-200 hover:text-primary-foreground md:inline-flex"
+      >
         <span className="inline-flex text-base" aria-hidden="true">
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -115,7 +118,7 @@ export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
         Early Access
       </button>
     ),
-    []
+    [],
   );
 
   return (
@@ -131,10 +134,11 @@ export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
         cta={headerCta}
       />
       <main
-        className={`relative isolate flex-1 pt-16 transform-gpu transition-transform duration-300 ease-in-out md:transition-[margin,transform,filter] ${isMenuOpen
+        className={`relative isolate flex-1 pt-16 transform-gpu transition-transform duration-300 ease-in-out md:transition-[margin,transform,filter] ${
+          isMenuOpen
             ? "translate-x-[80%] blur-sm md:translate-x-0 md:blur-none md:filter-none md:ml-80"
             : "translate-x-0 md:ml-0 filter-none"
-          }`}
+        }`}
         style={{ willChange: "transform" }}
       >
         <HeroSection onScrollClick={handleScrollClick} />

@@ -1,10 +1,10 @@
 /**
  * Job Search Service
- * 
+ *
  * Core job search implementation that fetches and filters jobs from the
  * SportsNaukri WordPress API. Features intelligent search handling,
  * fallback strategies, and resume-based relevance scoring.
- * 
+ *
  * Features:
  * - Smart location extraction from search queries
  * - Fallback to broader search when results are sparse
@@ -12,20 +12,27 @@
  * - Resume skill matching and relevance scoring
  * - HTML cleaning and entity decoding
  * - Pagination with multi-page fetching
- * 
+ *
  * Search Strategy:
  * 1. Extract location keywords from search query
  * 2. Fetch jobs from WordPress API with server-side search
  * 3. Apply client-side filters (location, job type, keyword matching)
  * 4. If < desired results, trigger fallback (remove search filter)
  * 5. Annotate results with resume relevance scores
- * 
+ *
  * @module lib/jobs/service
  * @see {@link ./types.ts} for data types
  * @see {@link ../../app/api/chat/route.ts} for AI tool integration
  */
 
-import { Job, JobFilter, JobResponse, JobResponseMeta, JobRelevance, WPJob } from "./types";
+import type {
+  Job,
+  JobFilter,
+  JobRelevance,
+  JobResponse,
+  JobResponseMeta,
+  WPJob,
+} from "./types";
 
 // ============================================================================
 // WordPress API Configuration
@@ -43,10 +50,30 @@ const WORDPRESS_API_URL = "https://sportsnaukri.com/wp-json/wp/v2/job_listing";
  * Used to extract location filters from search queries.
  */
 const LOCATION_KEYWORDS = [
-  "mumbai", "delhi", "bangalore", "bengaluru", "hyderabad", "chennai",
-  "kolkata", "pune", "ahmedabad", "jaipur", "gurgaon", "gurugram",
-  "noida", "chandigarh", "kochi", "lucknow", "indore", "bhopal",
-  "nagpur", "visakhapatnam", "patna", "vadodara", "goa", "remote"
+  "mumbai",
+  "delhi",
+  "bangalore",
+  "bengaluru",
+  "hyderabad",
+  "chennai",
+  "kolkata",
+  "pune",
+  "ahmedabad",
+  "jaipur",
+  "gurgaon",
+  "gurugram",
+  "noida",
+  "chandigarh",
+  "kochi",
+  "lucknow",
+  "indore",
+  "bhopal",
+  "nagpur",
+  "visakhapatnam",
+  "patna",
+  "vadodara",
+  "goa",
+  "remote",
 ];
 
 /**
@@ -54,7 +81,12 @@ const LOCATION_KEYWORDS = [
  * When detected, no location filter is applied.
  */
 const BROAD_LOCATION_TERMS = [
-  "india", "indian", "nationwide", "any location", "anywhere", "all cities"
+  "india",
+  "indian",
+  "nationwide",
+  "any location",
+  "anywhere",
+  "all cities",
 ];
 
 /**
@@ -67,7 +99,9 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
   const maxPagesToFetch = 5;
   const fetchLimit = Math.min(desiredLimit * 2, 40);
   const skillKeywords = (filter.skillKeywords ?? []).filter(Boolean);
-  const explicitGeneralKeywords = (filter.generalKeywords ?? []).filter(Boolean);
+  const explicitGeneralKeywords = (filter.generalKeywords ?? []).filter(
+    Boolean,
+  );
 
   // Smart search handling
   const searchKeywords: string[] = [];
@@ -85,7 +119,6 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
         searchKeywords.push(keyword);
       }
     });
-
   }
 
   // Handle explicit location parameter
@@ -106,7 +139,10 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
     baseParams.set("search", searchKeywords.join(" "));
   }
 
-  const generalKeywordPool = explicitGeneralKeywords.length > 0 ? explicitGeneralKeywords : searchKeywords;
+  const generalKeywordPool =
+    explicitGeneralKeywords.length > 0
+      ? explicitGeneralKeywords
+      : searchKeywords;
 
   const filterContext: FilterContext = {
     locationKeywords,
@@ -117,12 +153,14 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
   const fetchAndFilterPage = async (
     pageNumber: number,
     paramsTemplate: URLSearchParams,
-    context: FilterContext
+    context: FilterContext,
   ) => {
     const params = new URLSearchParams(paramsTemplate);
     params.set("page", pageNumber.toString());
     const { wpJobs, totalJobs, totalPages } = await fetchWordpressPage(params);
-    let jobs = wpJobs.map(cleanJobData).filter((job): job is Job => job !== null);
+    let jobs = wpJobs
+      .map(cleanJobData)
+      .filter((job): job is Job => job !== null);
     jobs = applyClientFilters(jobs, context);
     jobs = annotateJobRelevance(jobs, skillKeywords, generalKeywordPool);
     return {
@@ -141,7 +179,11 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
     let currentPage = page;
 
     while (collected.length < desiredLimit && pagesFetched < maxPagesToFetch) {
-      const pageResult = await fetchAndFilterPage(currentPage, baseParams, filterContext);
+      const pageResult = await fetchAndFilterPage(
+        currentPage,
+        baseParams,
+        filterContext,
+      );
       pagesFetched += 1;
 
       if (!pageResult) {
@@ -167,7 +209,8 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
       currentPage += 1;
     }
 
-    const needBroaderSearch = searchKeywords.length > 0 && collected.length < desiredLimit;
+    const needBroaderSearch =
+      searchKeywords.length > 0 && collected.length < desiredLimit;
     if (needBroaderSearch) {
       console.info("[JobSearch] Sparse result set; triggering fallback", {
         searchKeywords,
@@ -182,11 +225,14 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
         searchKeywords: [],
       };
       let fallbackPage = 1;
-      while (collected.length < desiredLimit && pagesFetched < maxPagesToFetch) {
+      while (
+        collected.length < desiredLimit &&
+        pagesFetched < maxPagesToFetch
+      ) {
         const pageResult = await fetchAndFilterPage(
           fallbackPage,
           fallbackParams,
-          fallbackContext
+          fallbackContext,
         );
         pagesFetched += 1;
 
@@ -207,7 +253,10 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
           }
         }
 
-        if (collected.length >= desiredLimit || fallbackPage >= pageResult.totalPages) {
+        if (
+          collected.length >= desiredLimit ||
+          fallbackPage >= pageResult.totalPages
+        ) {
           break;
         }
         fallbackPage += 1;
@@ -230,7 +279,8 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
       telemetryId: filter.telemetry?.requestId,
       conversationId: filter.telemetry?.conversationId,
       broadenedSearch: needBroaderSearch || undefined,
-      lowResultCount: paginatedJobs.length < 3 ? paginatedJobs.length : undefined,
+      lowResultCount:
+        paginatedJobs.length < 3 ? paginatedJobs.length : undefined,
       requestedCount: desiredLimit,
       searchKeywords,
       skillKeywords,
@@ -250,12 +300,13 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
     if (paginatedJobs.length === 0) {
       result.message = "No jobs found matching your criteria.";
       result.tips = [];
-      if (searchKeywords.length > 0) result.tips.push("Try broader search terms.");
-      if (locationKeywords.length > 0) result.tips.push("Try removing location filters.");
+      if (searchKeywords.length > 0)
+        result.tips.push("Try broader search terms.");
+      if (locationKeywords.length > 0)
+        result.tips.push("Try removing location filters.");
     }
 
     return result;
-
   } catch (error) {
     console.error("Error fetching jobs:", error);
     return {
@@ -297,7 +348,9 @@ function applyClientFilters(jobs: Job[], context: FilterContext) {
 
   if (jobType) {
     const typeLower = jobType.toLowerCase();
-    filtered = filtered.filter((job) => job.jobType.toLowerCase().includes(typeLower));
+    filtered = filtered.filter((job) =>
+      job.jobType.toLowerCase().includes(typeLower),
+    );
   }
 
   if (searchKeywords.length > 0) {
@@ -310,7 +363,9 @@ function applyClientFilters(jobs: Job[], context: FilterContext) {
         ${job.category} 
         ${job.qualification}
       `.toLowerCase();
-      const matches = searchKeywords.filter((keyword) => searchableText.includes(keyword)).length;
+      const matches = searchKeywords.filter((keyword) =>
+        searchableText.includes(keyword),
+      ).length;
       return matches >= requiredMatches;
     });
   }
@@ -330,8 +385,14 @@ async function fetchWordpressPage(params: URLSearchParams) {
   const wpJobs: WPJob[] = await response.json();
   const totalJobsHeader = response.headers.get("x-wp-total");
   const totalPagesHeader = response.headers.get("x-wp-totalpages");
-  const totalJobs = totalJobsHeader ? parseInt(totalJobsHeader, 10) : wpJobs.length;
-  const totalPages = totalPagesHeader ? parseInt(totalPagesHeader, 10) : Math.ceil(totalJobs / (parseInt(params.get("per_page") ?? "10", 10)));
+  const totalJobs = totalJobsHeader
+    ? Number.parseInt(totalJobsHeader, 10)
+    : wpJobs.length;
+  const totalPages = totalPagesHeader
+    ? Number.parseInt(totalPagesHeader, 10)
+    : Math.ceil(
+        totalJobs / Number.parseInt(params.get("per_page") ?? "10", 10),
+      );
 
   return { wpJobs, totalJobs, totalPages };
 }
@@ -356,8 +417,11 @@ function cleanJobData(job: WPJob): Job | null {
       qualification: job.metas?._job_qualification || "Not specified",
       experience: job.metas?._job_experience || "Not specified",
       salary: formatSalary(job.metas?._job_salary, job.metas?._job_max_salary),
-      description: description.substring(0, 800) + (description.length > 800 ? "..." : ""),
-      postedDate: job.date ? new Date(job.date).toLocaleDateString("en-IN") : null,
+      description:
+        description.substring(0, 800) + (description.length > 800 ? "..." : ""),
+      postedDate: job.date
+        ? new Date(job.date).toLocaleDateString("en-IN")
+        : null,
       fullDescriptionUrl: job.link,
     };
   } catch (error) {
@@ -394,11 +458,18 @@ function formatSalary(min?: string, max?: string): string {
 
 function stripHtmlTags(html: string): string {
   return decodeHtmlEntities(
-    html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
+    html
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
   );
 }
 
-function annotateJobRelevance(jobs: Job[], skillKeywords: string[], generalKeywords: string[]) {
+function annotateJobRelevance(
+  jobs: Job[],
+  skillKeywords: string[],
+  generalKeywords: string[],
+) {
   if (!jobs.length) {
     return jobs;
   }
@@ -411,7 +482,11 @@ function annotateJobRelevance(jobs: Job[], skillKeywords: string[], generalKeywo
   });
 }
 
-function computeJobRelevance(job: Job, skillKeywords: string[], generalKeywords: string[]): JobRelevance | undefined {
+function computeJobRelevance(
+  job: Job,
+  skillKeywords: string[],
+  generalKeywords: string[],
+): JobRelevance | undefined {
   const haystack = buildJobHaystack(job);
   const skillMatches = collectMatches(haystack, skillKeywords);
   const generalMatches = collectMatches(haystack, generalKeywords);
@@ -425,10 +500,7 @@ function computeJobRelevance(job: Job, skillKeywords: string[], generalKeywords:
 }
 
 function buildJobHaystack(job: Job): string {
-  return (
-    `${job.title} ${job.description} ${job.employer} ${job.category} ${job.qualification} ${job.experience} ${job.jobType} ${job.location}`
-      .toLowerCase()
-  );
+  return `${job.title} ${job.description} ${job.employer} ${job.category} ${job.qualification} ${job.experience} ${job.jobType} ${job.location}`.toLowerCase();
 }
 
 function collectMatches(haystack: string, keywords: string[]): string[] {
@@ -453,11 +525,24 @@ function collectMatches(haystack: string, keywords: string[]): string[] {
 function decodeHtmlEntities(text: string): string {
   if (!text) return text;
   const entities: Record<string, string> = {
-    "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"',
-    "&#039;": "'", "&#8217;": "'", "&#8216;": "'", "&#8220;": '"',
-    "&#8221;": '"', "&#8211;": "–", "&#8212;": "—", "&nbsp;": " ",
-    "&ndash;": "–", "&mdash;": "—", "&rsquo;": "'", "&lsquo;": "'",
-    "&rdquo;": '"', "&ldquo;": '"'
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&#039;": "'",
+    "&#8217;": "'",
+    "&#8216;": "'",
+    "&#8220;": '"',
+    "&#8221;": '"',
+    "&#8211;": "–",
+    "&#8212;": "—",
+    "&nbsp;": " ",
+    "&ndash;": "–",
+    "&mdash;": "—",
+    "&rsquo;": "'",
+    "&lsquo;": "'",
+    "&rdquo;": '"',
+    "&ldquo;": '"',
   };
 
   let decoded = text;

@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Plus, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Sparkles,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 
 import type { SkillMatch } from "@/lib/skills/extract";
 
@@ -26,22 +33,73 @@ const MAX_SELECTED_SKILLS = 5;
 const EMPTY_SKILLS: SkillMatch[] = [];
 
 // Category colors for visual grouping
-const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  "Coaching": { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700" },
-  "Sports Science": { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
-  "Data & Insights": { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700" },
-  "Recruitment": { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700" },
-  "Operations": { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700" },
-  "Marketing": { bg: "bg-pink-50", border: "border-pink-200", text: "text-pink-700" },
-  "Commercial": { bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-700" },
-  "Media": { bg: "bg-cyan-50", border: "border-cyan-200", text: "text-cyan-700" },
-  "Product": { bg: "bg-indigo-50", border: "border-indigo-200", text: "text-indigo-700" },
-  "Corporate": { bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-700" },
-  "Academics": { bg: "bg-teal-50", border: "border-teal-200", text: "text-teal-700" },
-  "Resume Input": { bg: "bg-violet-50", border: "border-violet-200", text: "text-violet-700" },
+const CATEGORY_COLORS: Record<
+  string,
+  { bg: string; border: string; text: string }
+> = {
+  Coaching: {
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
+  },
+  "Sports Science": {
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    text: "text-blue-700",
+  },
+  "Data & Insights": {
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+    text: "text-purple-700",
+  },
+  Recruitment: {
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    text: "text-amber-700",
+  },
+  Operations: {
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+    text: "text-slate-700",
+  },
+  Marketing: {
+    bg: "bg-pink-50",
+    border: "border-pink-200",
+    text: "text-pink-700",
+  },
+  Commercial: {
+    bg: "bg-orange-50",
+    border: "border-orange-200",
+    text: "text-orange-700",
+  },
+  Media: { bg: "bg-cyan-50", border: "border-cyan-200", text: "text-cyan-700" },
+  Product: {
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
+    text: "text-indigo-700",
+  },
+  Corporate: {
+    bg: "bg-gray-50",
+    border: "border-gray-200",
+    text: "text-gray-700",
+  },
+  Academics: {
+    bg: "bg-teal-50",
+    border: "border-teal-200",
+    text: "text-teal-700",
+  },
+  "Resume Input": {
+    bg: "bg-violet-50",
+    border: "border-violet-200",
+    text: "text-violet-700",
+  },
 };
 
-const DEFAULT_COLORS = { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700" };
+const DEFAULT_COLORS = {
+  bg: "bg-slate-50",
+  border: "border-slate-200",
+  text: "text-slate-700",
+};
 
 export function ResumeSkillDialog({
   isOpen,
@@ -52,8 +110,13 @@ export function ResumeSkillDialog({
   isSubmitting = false,
 }: ResumeSkillDialogProps) {
   const availableSkills = draft?.skills ?? EMPTY_SKILLS;
-  const defaultSelected = useMemo(() => availableSkills.slice(0, MAX_SELECTED_SKILLS).map((skill) => skill.label), [availableSkills]);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>(defaultSelected);
+  const defaultSelected = useMemo(
+    () =>
+      availableSkills.slice(0, MAX_SELECTED_SKILLS).map((skill) => skill.label),
+    [availableSkills],
+  );
+  const [selectedSkills, setSelectedSkills] =
+    useState<string[]>(defaultSelected);
   const [customSkill, setCustomSkill] = useState("");
   const [showPreview, setShowPreview] = useState(false);
 
@@ -91,7 +154,10 @@ export function ResumeSkillDialog({
     if (!value) {
       return;
     }
-    if (selectedSkills.length >= MAX_SELECTED_SKILLS && !selectedSkills.includes(value)) {
+    if (
+      selectedSkills.length >= MAX_SELECTED_SKILLS &&
+      !selectedSkills.includes(value)
+    ) {
       return;
     }
     setSelectedSkills((prev) => {
@@ -104,7 +170,9 @@ export function ResumeSkillDialog({
   };
 
   const handleConfirm = () => {
-    const trimmedSkills = selectedSkills.map((skill) => skill.trim()).filter(Boolean);
+    const trimmedSkills = selectedSkills
+      .map((skill) => skill.trim())
+      .filter(Boolean);
     onConfirm(trimmedSkills);
   };
 
@@ -120,8 +188,12 @@ export function ResumeSkillDialog({
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Resume detected</p>
-              <h2 className="text-lg font-semibold text-slate-900">Select your key skills</h2>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Resume detected
+              </p>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Select your key skills
+              </h2>
             </div>
           </div>
           <button
@@ -139,14 +211,20 @@ export function ResumeSkillDialog({
             {/* File Info Card */}
             <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4">
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="font-semibold text-slate-700">{draft.fileName}</span>
+                <span className="font-semibold text-slate-700">
+                  {draft.fileName}
+                </span>
                 <span className="text-slate-400">·</span>
                 <span className="text-slate-500">{draft.wordCount} words</span>
                 <span className="text-slate-400">·</span>
-                <span className="text-slate-500">{draft.readingTimeMinutes} min read</span>
+                <span className="text-slate-500">
+                  {draft.readingTimeMinutes} min read
+                </span>
               </div>
               {draft.limitNotice && (
-                <p className="mt-2 text-xs text-slate-500">{draft.limitNotice}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {draft.limitNotice}
+                </p>
               )}
               <button
                 type="button"
@@ -164,7 +242,9 @@ export function ResumeSkillDialog({
                 )}
               </button>
               {showPreview && (
-                <p className="mt-3 line-clamp-6 whitespace-pre-line rounded-lg bg-white p-3 text-sm text-slate-600 border border-slate-100">{draft.textPreview}</p>
+                <p className="mt-3 line-clamp-6 whitespace-pre-line rounded-lg bg-white p-3 text-sm text-slate-600 border border-slate-100">
+                  {draft.textPreview}
+                </p>
               )}
             </div>
 
@@ -173,10 +253,14 @@ export function ResumeSkillDialog({
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Detected skills
               </p>
-              <div className={clsx(
-                "rounded-full px-3 py-1 text-xs font-medium",
-                remainingSlots === 0 ? "bg-amber-100 text-amber-700" : "bg-[#006dff]/10 text-[#006dff]"
-              )}>
+              <div
+                className={clsx(
+                  "rounded-full px-3 py-1 text-xs font-medium",
+                  remainingSlots === 0
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-[#006dff]/10 text-[#006dff]",
+                )}
+              >
                 {selectedSkills.length} / {MAX_SELECTED_SKILLS} selected
               </div>
             </div>
@@ -185,7 +269,8 @@ export function ResumeSkillDialog({
             {availableSkills.length === 0 ? (
               <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                We couldn&apos;t detect clear skills from your resume. You can add your own below.
+                We couldn&apos;t detect clear skills from your resume. You can
+                add your own below.
               </div>
             ) : (
               <div className="space-y-4">
@@ -193,11 +278,21 @@ export function ResumeSkillDialog({
                   const colors = CATEGORY_COLORS[category] || DEFAULT_COLORS;
                   return (
                     <div key={category}>
-                      <p className={clsx("mb-2 text-xs font-medium", colors.text)}>{category}</p>
+                      <p
+                        className={clsx(
+                          "mb-2 text-xs font-medium",
+                          colors.text,
+                        )}
+                      >
+                        {category}
+                      </p>
                       <div className="flex flex-wrap gap-2">
                         {skills.map((skill) => {
-                          const isSelected = selectedSkills.includes(skill.label);
-                          const isDisabled = !isSelected && remainingSlots === 0;
+                          const isSelected = selectedSkills.includes(
+                            skill.label,
+                          );
+                          const isDisabled =
+                            !isSelected && remainingSlots === 0;
                           return (
                             <button
                               key={skill.id}
@@ -209,7 +304,7 @@ export function ResumeSkillDialog({
                                   ? "border-[#006dff] bg-[#006dff] text-white shadow-sm"
                                   : isDisabled
                                     ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-                                    : `${colors.border} ${colors.bg} ${colors.text} hover:shadow-sm hover:border-[#006dff]/50`
+                                    : `${colors.border} ${colors.bg} ${colors.text} hover:shadow-sm hover:border-[#006dff]/50`,
                               )}
                               onClick={() => toggleSkill(skill.label)}
                               title={`${skill.label} - ${Math.round(skill.confidence * 100)}% match confidence`}
@@ -253,7 +348,7 @@ export function ResumeSkillDialog({
                   "inline-flex items-center gap-1.5 rounded-full border px-4 py-2.5 text-sm font-semibold transition",
                   remainingSlots === 0 || !customSkill.trim()
                     ? "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
-                    : "border-[#006dff] text-[#006dff] hover:bg-[#006dff]/10"
+                    : "border-[#006dff] text-[#006dff] hover:bg-[#006dff]/10",
                 )}
               >
                 <Plus className="h-4 w-4" /> Add
@@ -262,7 +357,9 @@ export function ResumeSkillDialog({
 
             {/* Privacy Note */}
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              We share only a short summary of your resume with the assistant. Your full resume text stays private unless you open the context panel.
+              We share only a short summary of your resume with the assistant.
+              Your full resume text stays private unless you open the context
+              panel.
             </p>
           </div>
         </div>
@@ -292,7 +389,7 @@ export function ResumeSkillDialog({
                 "inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-white transition shadow-sm",
                 selectedSkills.length === 0 || isSubmitting
                   ? "bg-slate-300 cursor-not-allowed"
-                  : "bg-gradient-to-r from-[#006dff] to-[#0056cc] hover:from-[#0056cc] hover:to-[#0050c7] shadow-[#006dff]/25"
+                  : "bg-gradient-to-r from-[#006dff] to-[#0056cc] hover:from-[#0056cc] hover:to-[#0050c7] shadow-[#006dff]/25",
               )}
             >
               <Check className="h-4 w-4" />

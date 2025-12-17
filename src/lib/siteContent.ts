@@ -9,13 +9,13 @@
 
 /**
  * Site Content Configuration
- * 
+ *
  * Defines static content for the landing page to allow easy text updates
  * without modifying UI components.
  * includes:
  * - Navigation links
  * - Tool definitions (JAY, Navigator) with images and CTAs
- * 
+ *
  * @module lib/siteContent
  */
 

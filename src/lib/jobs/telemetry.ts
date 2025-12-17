@@ -1,17 +1,17 @@
 /**
  * Job Search Telemetry Tracking
- * 
+ *
  * Client-side telemetry for tracking job search quality.
  * Records searches with low result counts or fallback triggers
  * to localStorage for analysis.
- * 
+ *
  * Purpose:
  * - Track when searches return < 3 results
  * - Track when fallback (broadened) search is triggered
  * - Help identify search quality issues
- * 
+ *
  * Data is stored locally and never sent to external services.
- * 
+ *
  * @module lib/jobs/telemetry
  * @see {@link ../../components/chat/JobCard.tsx} for usage
  */
@@ -57,13 +57,13 @@ type JobSearchTelemetryEntry = {
 
 /**
  * Records a job search event to telemetry if it meets recording criteria.
- * 
+ *
  * Recording criteria:
  * - Search had broadenedSearch flag (fallback was triggered), OR
  * - Search returned < 3 results
- * 
+ *
  * Duplicate entries (same telemetryId) are ignored.
- * 
+ *
  * @param meta - Response metadata from job search
  */
 export function recordJobSearchTelemetry(meta?: JobResponseMeta) {
@@ -78,7 +78,10 @@ export function recordJobSearchTelemetry(meta?: JobResponseMeta) {
   }
 
   // Only record "interesting" events
-  if (!meta.broadenedSearch && (typeof meta.lowResultCount !== "number" || meta.lowResultCount >= 3)) {
+  if (
+    !meta.broadenedSearch &&
+    (typeof meta.lowResultCount !== "number" || meta.lowResultCount >= 3)
+  ) {
     return;
   }
 
@@ -104,11 +107,13 @@ export function recordJobSearchTelemetry(meta?: JobResponseMeta) {
 
 /**
  * Retrieves telemetry entries from localStorage.
- * 
+ *
  * @param limit - Maximum number of entries to return (default: 20)
  * @returns Array of telemetry entries, newest first
  */
-export function getJobSearchTelemetry(limit = MAX_ENTRIES): JobSearchTelemetryEntry[] {
+export function getJobSearchTelemetry(
+  limit = MAX_ENTRIES,
+): JobSearchTelemetryEntry[] {
   if (typeof window === "undefined") {
     return [];
   }
@@ -135,4 +140,3 @@ function readTelemetry(): JobSearchTelemetryEntry[] {
     return [];
   }
 }
-

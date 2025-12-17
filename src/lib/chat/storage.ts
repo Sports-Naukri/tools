@@ -1,27 +1,27 @@
 /**
  * Chat Storage Layer (IndexedDB)
- * 
+ *
  * Client-side persistence for conversations, messages, and usage snapshots.
  * Uses Dexie.js as a wrapper around IndexedDB for easier async operations.
- * 
+ *
  * Features:
  * - Conversation CRUD operations
  * - Message storage with streaming support
  * - Usage snapshot caching (for offline rate limit display)
  * - Automatic message count tracking
- * 
+ *
  * Database Schema (v2):
  * - conversations: id (PK), createdAt, updatedAt
  * - messages: id (PK), conversationId (indexed), createdAt
  * - usageSnapshots: conversationId (PK), updatedAt
- * 
+ *
  * @module lib/chat/storage
  * @see {@link https://dexie.org} for Dexie documentation
  * @see {@link ../resume/storage.ts} for resume-specific storage
  */
 
-import Dexie, { type Table } from "dexie";
 import type { UIMessage } from "@ai-sdk/react";
+import Dexie, { type Table } from "dexie";
 
 import type { CanvasDocument } from "@/lib/canvas/documents";
 import type { UsageSnapshot } from "@/lib/chat/types";
@@ -52,7 +52,7 @@ type SerializedMessagePart = NonNullable<UIMessage["parts"]>[number];
  */
 export type StoredToolInvocation = {
   /** Current state of the tool call */
-  state: 'result' | 'call' | 'partial-call';
+  state: "result" | "call" | "partial-call";
   /** Unique identifier for this tool call */
   toolCallId: string;
   /** Name of the tool (e.g., "searchJobs", "generateDocument") */
@@ -65,7 +65,7 @@ export type StoredToolInvocation = {
 
 /**
  * Database representation of a chat message.
- * 
+ *
  * Includes all data needed to restore a message with its attachments,
  * generated documents, and tool call results.
  */
@@ -129,7 +129,7 @@ export type StoredUsageSnapshot = {
 
 /**
  * Dexie database class for chat storage.
- * 
+ *
  * Version history:
  * - v1: Initial schema with conversations and messages
  * - v2: Added usageSnapshots table for rate limit caching
@@ -169,7 +169,7 @@ export const chatDb = new ChatDatabase();
 
 /**
  * Creates a new conversation in the database.
- * 
+ *
  * @param conversation - The conversation to create
  * @returns The created conversation
  * @throws If conversation with same ID already exists
@@ -182,7 +182,7 @@ export async function createConversation(conversation: StoredConversation) {
 /**
  * Updates or inserts a conversation in the database.
  * More forgiving than createConversation - won't fail on duplicates.
- * 
+ *
  * @param conversation - The conversation to upsert
  * @returns The upserted conversation
  */
@@ -193,7 +193,7 @@ export async function upsertConversation(conversation: StoredConversation) {
 
 /**
  * Retrieves a conversation by its ID.
- * 
+ *
  * @param conversationId - The conversation ID to look up
  * @returns The conversation or undefined if not found
  */
@@ -204,7 +204,7 @@ export async function getConversation(conversationId: string) {
 /**
  * Gets the most recently updated conversation.
  * Used to restore the last active conversation on page load.
- * 
+ *
  * @returns The most recent conversation or undefined
  */
 export async function getLatestConversation() {
@@ -214,7 +214,7 @@ export async function getLatestConversation() {
 /**
  * Lists conversations, ordered by most recently updated.
  * Used to populate the sidebar conversation list.
- * 
+ *
  * @param limit - Maximum number of conversations to return (default: 20)
  * @returns Array of conversations, newest first
  */
@@ -229,22 +229,28 @@ export async function listConversations(limit = 20) {
 /**
  * Updates metadata for a conversation (title, model, archived status).
  * Does nothing if conversation doesn't exist.
- * 
+ *
  * @param conversationId - The conversation to update
  * @param updates - Partial updates to apply
  */
 export async function updateConversationMeta(
   conversationId: string,
-  updates: Partial<Pick<StoredConversation, "title" | "modelId" | "isArchived">>
+  updates: Partial<
+    Pick<StoredConversation, "title" | "modelId" | "isArchived">
+  >,
 ) {
   const existing = await chatDb.conversations.get(conversationId);
   if (!existing) return;
-  await chatDb.conversations.put({ ...existing, ...updates, updatedAt: new Date().toISOString() });
+  await chatDb.conversations.put({
+    ...existing,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 /**
  * Soft-archives a conversation (hides from main list).
- * 
+ *
  * @param conversationId - The conversation to archive
  */
 export async function archiveConversation(conversationId: string) {
@@ -256,15 +262,21 @@ export async function archiveConversation(conversationId: string) {
 /**
  * Permanently deletes a conversation and all its messages.
  * Also removes any cached usage snapshots.
- * 
+ *
  * @param conversationId - The conversation to delete
  */
 export async function deleteConversation(conversationId: string) {
-  await chatDb.transaction("rw", chatDb.messages, chatDb.conversations, chatDb.usageSnapshots, async () => {
-    await chatDb.messages.where({ conversationId }).delete();
-    await chatDb.conversations.delete(conversationId);
-    await chatDb.usageSnapshots.delete(conversationId);
-  });
+  await chatDb.transaction(
+    "rw",
+    chatDb.messages,
+    chatDb.conversations,
+    chatDb.usageSnapshots,
+    async () => {
+      await chatDb.messages.where({ conversationId }).delete();
+      await chatDb.conversations.delete(conversationId);
+      await chatDb.usageSnapshots.delete(conversationId);
+    },
+  );
 }
 
 // ============================================================================
@@ -273,37 +285,44 @@ export async function deleteConversation(conversationId: string) {
 
 /**
  * Saves a message to the database and updates the conversation's message count.
- * 
+ *
  * Handles both new messages and updates to existing messages (e.g., during streaming).
  * Uses a transaction to ensure atomicity.
- * 
+ *
  * @param message - The message to save
  * @returns The saved message
  */
 export async function saveMessage(message: StoredMessage) {
-  await chatDb.transaction("rw", chatDb.messages, chatDb.conversations, async () => {
-    // Check if this is an update to an existing message
-    const previouslySaved = await chatDb.messages.get(message.id);
-    await chatDb.messages.put(message);
+  await chatDb.transaction(
+    "rw",
+    chatDb.messages,
+    chatDb.conversations,
+    async () => {
+      // Check if this is an update to an existing message
+      const previouslySaved = await chatDb.messages.get(message.id);
+      await chatDb.messages.put(message);
 
-    // Update conversation metadata
-    const existingConversation = await chatDb.conversations.get(message.conversationId);
-    if (existingConversation) {
-      // Only increment count for brand-new messages, not streaming updates
-      const increment = previouslySaved ? 0 : 1;
-      await chatDb.conversations.put({
-        ...existingConversation,
-        updatedAt: new Date().toISOString(),
-        messageCount: existingConversation.messageCount + increment,
-      });
-    }
-  });
+      // Update conversation metadata
+      const existingConversation = await chatDb.conversations.get(
+        message.conversationId,
+      );
+      if (existingConversation) {
+        // Only increment count for brand-new messages, not streaming updates
+        const increment = previouslySaved ? 0 : 1;
+        await chatDb.conversations.put({
+          ...existingConversation,
+          updatedAt: new Date().toISOString(),
+          messageCount: existingConversation.messageCount + increment,
+        });
+      }
+    },
+  );
   return message;
 }
 
 /**
  * Retrieves all messages for a conversation, ordered by creation time.
- * 
+ *
  * @param conversationId - The conversation to get messages for
  * @returns Array of messages, oldest first
  */
@@ -318,11 +337,14 @@ export async function getMessages(conversationId: string) {
 /**
  * Caches a usage snapshot for offline display.
  * Called after each API response with updated rate limit info.
- * 
+ *
  * @param conversationId - The conversation this snapshot is for
  * @param snapshot - The usage data to cache
  */
-export async function saveUsageSnapshot(conversationId: string, snapshot: UsageSnapshot) {
+export async function saveUsageSnapshot(
+  conversationId: string,
+  snapshot: UsageSnapshot,
+) {
   await chatDb.usageSnapshots.put({
     conversationId,
     snapshot,
@@ -332,7 +354,7 @@ export async function saveUsageSnapshot(conversationId: string, snapshot: UsageS
 
 /**
  * Retrieves a cached usage snapshot for a conversation.
- * 
+ *
  * @param conversationId - The conversation to look up
  * @returns The cached snapshot or null if not found
  */
@@ -348,4 +370,3 @@ export async function getStoredUsageSnapshot(conversationId: string) {
 export async function clearUsageSnapshots() {
   await chatDb.usageSnapshots.clear();
 }
-

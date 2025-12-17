@@ -40,7 +40,7 @@ export type Tool = {
 };
 
 export const getSiteContent = cache(() => {
-  const navLinks: NavLink[] = [{ label: "Solutions", href: "#tools" }];
+  const navLinks: NavLink[] = [];
 
   const tools: Tool[] = [
     {

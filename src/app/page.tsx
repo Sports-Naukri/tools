@@ -13,7 +13,7 @@ import { getSiteContent } from "@/lib/siteContent";
 export const revalidate = 3600;
 
 export default function Home() {
-  const { navLinks, tools } = getSiteContent();
+  const { navLinks } = getSiteContent();
 
-  return <HomePageClient navLinks={navLinks} tools={tools} />;
+  return <HomePageClient navLinks={navLinks} />;
 }

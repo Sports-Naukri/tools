@@ -1,127 +1,178 @@
-/**
- * Hero Section Component
- *
- * The main fold of the landing page.
- * Features:
- * - Headline and subheadline
- * - Primary CTA ("Explore tools")
- * - Secondary CTA (SportsNaukri.com link)
- * - Background gradient effects
- * - "Scroll" indicator button
- *
- * @module components/HeroSection
- */
-
 "use client";
 
-import Link from "next/link";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { ArrowUp } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 
-type HeroSectionProps = {
-  onScrollClick: () => void;
-};
+export function HeroSection() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [input, setInput] = useState("");
 
-export function HeroSection({ onScrollClick }: HeroSectionProps) {
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end start"],
+  });
+
+  const y = useTransform(scrollYProgress, [0, 1], [0, 200]);
+  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim()) {
+      router.push(`/chat?initialMessage=${encodeURIComponent(input)}`);
+    }
+  };
+
+  const suggestions = [
+    { label: "Find sports marketing jobs", icon: "💼" },
+    { label: "Review my resume", icon: "📄" },
+    { label: "Latest cricket analytics trends", icon: "🏏" },
+    { label: "Draft a cover letter", icon: "✍️" },
+  ];
+
   return (
-    <section className="hero-section relative flex min-h-[calc(100vh-4rem)] items-center overflow-hidden">
-      <div className="container mx-auto px-4 py-24 sm:px-6 sm:py-32 lg:px-8">
-        <div className="relative z-10 mx-auto max-w-4xl text-center">
-          <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1 text-sm font-semibold text-primary shadow-sm backdrop-blur">
-            New for 2025
-            <span className="inline-flex text-base" aria-hidden="true">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 800 800"
-                fill="#006dff"
-                stroke="#006dff"
-                strokeWidth="14.2857"
-                strokeMiterlimit="57.1429"
-                width={15}
-                height={15}
-              >
-                <path
-                  d="M381.2,180.9c4,0,6-2.3,7-6c10.4-55.9,9.7-57.3,68-68.3c4-0.7,6.4-3,6.4-7c0-4-2.3-6.4-6.4-7
-                  c-57.9-11.7-56.2-13.1-68-68.3c-1-3.7-3-6-7-6c-4,0-6,2.3-7,6c-11.7,55.2-9.7,56.6-68,68.3c-3.7,0.7-6.4,3-6.4,7c0,4,2.7,6.4,6.4,7
-                  c58.3,11.7,57.6,12.4,68,68.3C375.2,178.5,377.2,180.9,381.2,180.9z M219.2,411.2c6.4,0,10.7-4,11.4-10
-                  c12.1-89.4,15.1-89.4,107.5-107.1c6-1,10.4-5,10.4-11.4c0-6-4.4-10.4-10.4-11.4c-92.4-12.7-95.8-15.7-107.5-106.8
-                  c-0.7-6-5-10.4-11.4-10.4c-6,0-10.4,4.4-11,10.7c-11,89.7-15.7,89.4-107.5,106.5c-6,1.3-10.4,5.4-10.4,11.4
-                  c0,6.7,4.4,10.4,11.7,11.4c91.1,14.7,95.1,17.1,106.1,106.5C208.8,407.2,213.2,411.2,219.2,411.2z M446.2,781.9
-                  c8.7,0,15.1-6.4,16.7-15.4c23.8-183.5,49.6-211.3,231-231.4c9.4-1,15.7-8,15.7-16.7c0-8.7-6.4-15.4-15.7-16.7
-                  c-181.5-20.1-207.3-47.9-231-231.4c-1.7-9-8-15.1-16.7-15.1c-8.7,0-15.1,6-16.4,15.1c-23.8,183.5-49.9,211.3-231,231.4
-                  c-9.7,1.3-16.1,8-16.1,16.7c0,8.7,6.4,15.7,16.1,16.7c180.8,23.8,205.9,48.2,231,231.4C431.1,775.5,437.5,781.9,446.2,781.9z"
-                />
-              </svg>
-            </span>
-          </div>
-          <h1 className="mt-8 text-4xl font-black text-gray-900 sm:text-5xl md:text-6xl lg:text-7xl">
-            Find Your Dream <span className="gradient-text">Sports Career</span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-gray-700 sm:text-xl">
-            Connect with top sports organizations and discover opportunities
-            that match your passion for athletics and wellness.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <Link
-              className="inline-flex items-center gap-2 rounded-lg bg-[#006dff] px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#0056cc]"
-              href="#tools"
-              scroll
-            >
-              Explore tools
-              <span className="inline-flex text-base" aria-hidden="true">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  height="24px"
-                  viewBox="0 -960 960 960"
-                  width="24px"
-                  fill="#fff"
-                >
-                  <path d="m256-240-56-56 384-384H240v-80h480v480h-80v-344L256-240Z" />
-                </svg>
-              </span>
-            </Link>
-            {/* TODO: Change back to "Watch product tour" when video is ready */}
-            <Link
-              className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/80 px-6 py-3 text-sm font-semibold text-gray-700 backdrop-blur hover:text-gray-900 shadow-lg shadow-primary/30 transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-primary/40"
-              href="https://sportsnaukri.com"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="inline-flex text-base" aria-hidden="true">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  height="24px"
-                  viewBox="0 -960 960 960"
-                  width="24px"
-                  fill="currentColor"
-                >
-                  <path d="M480-80q-82 0-155-31.5t-127.5-86Q143-252 111.5-325T80-480q0-83 31.5-155.5t86-127Q252-817 325-848.5T480-880q83 0 155.5 31.5t127 86q54.5 54.5 86 127T880-480q0 82-31.5 155t-86 127.5q-54.5 54.5-127 86T480-80Zm0-82q26-36 45-75t31-83H404q12 44 31 83t45 75Zm-104-16q-18-33-31.5-68.5T322-320H204q29 50 72.5 87t99.5 55Zm208 0q56-18 99.5-55t72.5-87H638q-9 38-22.5 73.5T584-178ZM170-400h136q-3-20-4.5-39.5T300-480q0-21 1.5-40.5T306-560H170q-5 20-7.5 39.5T160-480q0 21 2.5 40.5T170-400Zm216 0h188q3-20 4.5-39.5T580-480q0-21-1.5-40.5T574-560H386q-3 20-4.5 39.5T380-480q0 21 1.5 40.5T386-400Zm268 0h136q5-20 7.5-39.5T800-480q0-21-2.5-40.5T790-560H654q3 20 4.5 39.5T660-480q0 21-1.5 40.5T654-400Zm-16-240h118q-29-50-72.5-87T584-782q18 33 31.5 68.5T638-640Zm-234 0h152q-12-44-31-83t-45-75q-26 36-45 75t-31 83Zm-200 0h118q9-38 22.5-73.5T376-782q-56 18-99.5 55T204-640Z" />
-                </svg>
-              </span>
-              SportsNaukri.com
-            </Link>
-          </div>
-        </div>
+    <section
+      ref={containerRef}
+      className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-4"
+    >
+      {/* Subtle Grid Background */}
+      <div className="absolute inset-0 -z-20 h-full w-full bg-white bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
+
+      {/* Ambient Gradient Orbs */}
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        <motion.div
+          animate={{
+            scale: [1, 1.1, 1],
+            x: [0, 30, 0],
+            y: [0, -30, 0],
+          }}
+          transition={{
+            duration: 20,
+            repeat: Number.POSITIVE_INFINITY,
+            ease: "linear",
+          }}
+          className="absolute top-[-10%] left-[-10%] h-[600px] w-[600px] rounded-full bg-[#006dff]/5 blur-[120px]"
+        />
+        <motion.div
+          animate={{
+            scale: [1, 1.2, 1],
+            x: [0, -50, 0],
+            y: [0, 50, 0],
+          }}
+          transition={{
+            duration: 25,
+            repeat: Number.POSITIVE_INFINITY,
+            ease: "linear",
+          }}
+          className="absolute bottom-[-10%] right-[-10%] h-[700px] w-[700px] rounded-full bg-[#6d28d9]/5 blur-[120px]"
+        />
       </div>
-      <div className="hero-fade" aria-hidden="true" />
-      <div className="hero-gradient" aria-hidden="true" />
-      <button
-        type="button"
-        className="scroll-button"
-        onClick={onScrollClick}
-        aria-label="Scroll to tools section"
+
+      {/* Abstract Floating Elements */}
+      <div className="absolute inset-0 -z-5 overflow-hidden pointer-events-none">
+        <motion.div
+          animate={{ y: [0, -20, 0], rotate: [0, 5, 0] }}
+          transition={{
+            duration: 8,
+            repeat: Number.POSITIVE_INFINITY,
+            ease: "easeInOut",
+          }}
+          className="absolute top-[15%] left-[10%] h-24 w-24 rounded-full border border-gray-100 bg-white/50 backdrop-blur-sm shadow-sm"
+        />
+        <motion.div
+          animate={{ y: [0, 30, 0], rotate: [0, -10, 0] }}
+          transition={{
+            duration: 10,
+            repeat: Number.POSITIVE_INFINITY,
+            ease: "easeInOut",
+            delay: 1,
+          }}
+          className="absolute top-[40%] right-[8%] h-40 w-40 rounded-full border border-gray-100 bg-linear-to-br from-blue-50/30 to-purple-50/30 backdrop-blur-sm shadow-sm"
+        />
+        <motion.div
+          animate={{ y: [0, -25, 0], rotate: [0, 15, 0] }}
+          transition={{
+            duration: 12,
+            repeat: Number.POSITIVE_INFINITY,
+            ease: "easeInOut",
+            delay: 2,
+          }}
+          className="absolute bottom-[20%] left-[15%] h-20 w-20 rounded-2xl border border-gray-100 bg-white/60 backdrop-blur-md shadow-sm rotate-12"
+        />
+      </div>
+
+      <motion.div
+        style={{ y, opacity }}
+        className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-8 text-center"
       >
-        <span className="scroll-icon inline-flex text-2xl" aria-hidden="true">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            height="24px"
-            viewBox="0 -960 960 960"
-            width="24px"
-            fill="#666666"
-          >
-            <path d="m480-320 160-160-56-56-64 64v-168h-80v168l-64-64-56 56 160 160Zm0 240q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z" />
-          </svg>
-        </span>
-        <span>Scroll</span>
-      </button>
+        <motion.h1
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl"
+        >
+          What can I help with?
+        </motion.h1>
+
+        <motion.form
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.1, ease: "easeOut" }}
+          onSubmit={handleSearch}
+          className="relative w-full"
+        >
+          {/* Glow Effect */}
+          <div className="absolute -inset-1 -z-10 rounded-3xl bg-linear-to-r from-[#006dff] via-[#6d28d9] to-[#006dff] opacity-20 blur-xl transition-opacity duration-500" />
+
+          <div className="relative flex w-full flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-lg transition-shadow hover:shadow-xl focus-within:border-gray-300 focus-within:shadow-xl">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSearch(e);
+                }
+              }}
+              placeholder="Ask anything about sports careers, trends, or resume help..."
+              className="min-h-30 w-full resize-none border-none bg-transparent p-6 text-lg text-gray-900 placeholder:text-gray-400 focus:ring-0 focus:outline-none"
+            />
+
+            <div className="flex items-center justify-end px-4 pb-4">
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-900 text-white transition-all hover:bg-gray-700 disabled:bg-gray-200 disabled:text-gray-400 cursor-pointer"
+              >
+                <ArrowUp className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </motion.form>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
+          className="flex flex-wrap justify-center gap-3"
+        >
+          {suggestions.map((suggestion, i) => (
+            <button
+              type="button"
+              key={i}
+              onClick={() => {
+                setInput(suggestion.label);
+              }}
+              className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 cursor-pointer"
+            >
+              <span className="text-base">{suggestion.icon}</span>
+              {suggestion.label}
+            </button>
+          ))}
+        </motion.div>
+      </motion.div>
     </section>
   );
 }

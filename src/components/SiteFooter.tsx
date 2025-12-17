@@ -15,14 +15,12 @@ type SiteFooterProps = {
 export function SiteFooter({ currentYear, isMenuOpen }: SiteFooterProps) {
   return (
     <footer
-      className={`relative isolate flex-1 pt-16 transform-gpu transition-transform duration-300 ease-in-out md:transition-[margin,transform,filter] border-t border-border/60 bg-background/80 py-8 backdrop-blur supports-backdrop-filter:bg-background/60 ${
-        isMenuOpen
-          ? "translate-x-[80%] blur-sm md:translate-x-0 md:blur-none md:filter-none md:ml-80"
-          : "translate-x-0 md:ml-0 filter-none"
+      className={`border-t border-gray-100 bg-white py-6 transition-all duration-300 ${
+        isMenuOpen ? "blur-sm md:blur-none md:ml-80" : "md:ml-0"
       }`}
     >
-      <div className="container mx-auto px-4 text-center text-sm text-gray-600 sm:px-6 lg:px-8">
-        © {currentYear} Sports Naukri. All Right Reserved.
+      <div className="container mx-auto px-4 text-center text-sm text-gray-500">
+        <p>© {currentYear} Sports Naukri. All rights reserved.</p>
       </div>
     </footer>
   );

@@ -26,6 +26,7 @@ import {
   recordUpload,
   saveProfile,
   setContextEnabled,
+  setUploadState,
 } from "@/lib/resume/storage";
 
 type ButtonState = "no-profile" | "uploading" | "extracting" | "has-profile";
@@ -86,12 +87,14 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
       }
 
       try {
-        // Parse file
+        // Parse file - broadcast state for sidebar
         setButtonState("uploading");
+        setUploadState("parsing");
         const parsed = await parseResumeFile(file);
 
         // Extract with AI
         setButtonState("extracting");
+        setUploadState("extracting");
         const response = await fetch("/api/resume/extract", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -108,13 +111,19 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
         await recordUpload(file.name);
 
         setButtonState("has-profile");
+        setUploadState("success");
         setContextEnabledState(true);
         await setContextEnabled(true);
         onToggleChange?.(true);
+
+        // Reset upload state after brief success display
+        setTimeout(() => setUploadState("idle"), 2000);
       } catch (err) {
         console.error("Resume upload error:", err);
         setError("Upload failed");
         setButtonState("no-profile");
+        setUploadState("error");
+        setTimeout(() => setUploadState("idle"), 3000);
       }
     },
     [onToggleChange],
@@ -137,7 +146,8 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
         type="file"
         accept=".pdf,.docx"
         onChange={handleFileChange}
-        className="hidden"
+        className="sr-only"
+        style={{ position: "absolute", left: "-9999px" }}
       />
 
       {buttonState === "has-profile" ? (
@@ -146,7 +156,7 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
           type="button"
           onClick={handleToggle}
           className={clsx(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300",
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300",
             contextEnabled
               ? "bg-violet-100 text-violet-700 hover:bg-violet-200 shadow-sm shadow-violet-200/50"
               : "bg-slate-100 text-slate-500 hover:bg-slate-200",
@@ -176,7 +186,7 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
           onClick={handleUploadClick}
           disabled={isLoading}
           className={clsx(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
             isLoading
               ? "bg-slate-100 text-slate-400 cursor-wait"
               : error

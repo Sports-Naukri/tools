@@ -19,7 +19,7 @@
 
 import { type UIMessage, useChat } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
-import { nanoid } from "nanoid";
+import { useRouter } from "next/navigation";
 import {
   type CSSProperties,
   useCallback,
@@ -50,20 +50,21 @@ import {
   FOLLOWUP_TOOL_NAME,
 } from "@/lib/chat/constants";
 import {
+  type AgentRole,
   type StoredAttachment,
   type StoredConversation,
   type StoredMessage,
   type StoredToolInvocation,
-  createConversation,
   deleteConversation,
+  generateId,
   getConversation,
   getLatestConversation,
   getMessages,
   getStoredUsageSnapshot,
   listConversations,
   saveMessage,
-  saveUsageSnapshot,
   updateConversationMeta,
+  upsertConversation,
 } from "@/lib/chat/storage";
 import type { ToolAwareMessage, ToolInvocationState } from "@/lib/chat/tooling";
 import type {
@@ -90,17 +91,48 @@ const DEFAULT_UPLOADS_DISABLED_MESSAGE =
 const SUGGESTIONS_DISABLED =
   process.env.NEXT_PUBLIC_CHAT_SUGGESTIONS_DISABLED === "true";
 
+/**
+ * Convert AI SDK message role to storage role.
+ * Maps 'assistant' to the current agent mode (jay/navigator).
+ */
+function convertRole(
+  role: "user" | "assistant" | "system",
+  agentMode: AgentRole,
+): "user" | AgentRole | "system" {
+  if (role === "assistant") {
+    return agentMode;
+  }
+  return role;
+}
+
 type SessionState = {
   conversation: StoredConversation;
   messages: StoredMessage[];
   usage: UsageSnapshot;
 };
 
+type ChatPageClientProps = {
+  /** Conversation ID from URL. If new, creates conversation with this ID. */
+  conversationId?: string;
+};
+
 /**
  * Main client component for the chat page.
  * Handles the initialization of the chat session, loading history, and managing the active conversation.
  */
-export function ChatPageClient() {
+export function ChatPageClient({ conversationId }: ChatPageClientProps) {
+  const router = useRouter();
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const updateUrlShallow = useCallback(
+    (path: string) => {
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        window.history.replaceState(null, "", path);
+      } else {
+        router.replace(path, { scroll: false });
+      }
+    },
+    [router],
+  );
   const [session, setSession] = useState<SessionState | null>(null);
   const [history, setHistory] = useState<StoredConversation[]>([]);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -117,22 +149,16 @@ export function ChatPageClient() {
   }, []);
 
   /**
-   * Loads usage statistics for the current user/conversation.
+   * Loads usage statistics from client-side IndexedDB.
+   * Replaces the server API call for rate limiting.
    */
-  const loadUsage = useCallback(async (conversationId?: string) => {
-    const params = new URLSearchParams();
-    if (conversationId) params.set("conversationId", conversationId);
-    const res = await fetch(`/api/chat/usage?${params.toString()}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      throw new Error("Failed to load usage");
-    }
-    const data = (await res.json()) as UsageSnapshot;
-    console.log("[ChatPageClient] Loaded usage:", data);
-    if (conversationId) {
-      await saveUsageSnapshot(conversationId, data);
-    }
+  const loadUsage = useCallback(async (_conversationId?: string) => {
+    // Import dynamically to avoid SSR issues
+    const { getClientUsageSnapshot } = await import(
+      "@/lib/chat/clientRateLimiter"
+    );
+    const data = await getClientUsageSnapshot();
+    console.log("[ChatPageClient] Loaded client usage:", data);
     return data;
   }, []);
 
@@ -153,15 +179,38 @@ export function ChatPageClient() {
 
   const bootstrap = useCallback(async () => {
     setIsBootstrapping(true);
-    const latest = await getLatestConversation();
-    const conversation =
-      latest ??
-      (await createEmptyConversation({
-        modelId: DEFAULT_CHAT_MODEL_ID,
-        persist: false,
-      }));
-    const messages = await getMessages(conversation.id);
-    const cachedUsage = await getStoredUsageSnapshot(conversation.id);
+
+    let conversation: StoredConversation;
+
+    if (conversationId) {
+      // Try to load existing conversation from URL
+      const existing = await getConversation(conversationId);
+      if (existing) {
+        conversation = existing;
+      } else {
+        // Create new conversation with ID from URL
+        conversation = await createEmptyConversation({
+          modelId: DEFAULT_CHAT_MODEL_ID,
+          agentMode: "jay",
+          persist: true,
+          id: conversationId,
+        });
+      }
+    } else {
+      // Fallback: load latest or create new
+      const latest = await getLatestConversation();
+      conversation =
+        latest ??
+        (await createEmptyConversation({
+          modelId: DEFAULT_CHAT_MODEL_ID,
+          persist: false,
+        }));
+    }
+
+    const [messages, cachedUsage] = await Promise.all([
+      getMessages(conversation.id),
+      getStoredUsageSnapshot(conversation.id),
+    ]);
 
     if (!cachedUsage) {
       const usage = await loadUsage(conversation.id);
@@ -177,7 +226,7 @@ export function ChatPageClient() {
 
     await refreshHistory();
     setIsBootstrapping(false);
-  }, [loadUsage, refreshHistory, updateUsageForConversation]);
+  }, [conversationId, loadUsage, refreshHistory, updateUsageForConversation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,40 +246,60 @@ export function ChatPageClient() {
   }, [bootstrap]);
 
   const handleSelectConversation = useCallback(
-    async (conversationId: string) => {
-      if (!conversationId || conversationId === session?.conversation.id)
+    async (targetConversationId: string) => {
+      if (
+        !targetConversationId ||
+        targetConversationId === session?.conversation.id
+      )
         return;
-      const conversation = await getConversation(conversationId);
+      const conversation = await getConversation(targetConversationId);
       if (!conversation) return;
-      const messages = await getMessages(conversationId);
-      const cachedUsage = await getStoredUsageSnapshot(conversationId);
+      const messages = await getMessages(targetConversationId);
+      const cachedUsage = await getStoredUsageSnapshot(targetConversationId);
 
       if (!cachedUsage) {
-        const usage = await loadUsage(conversationId);
+        const usage = await loadUsage(targetConversationId);
         setSession({ conversation, messages, usage });
       } else {
         setSession({ conversation, messages, usage: cachedUsage });
-        void loadUsage(conversationId)
-          .then((fresh) => updateUsageForConversation(conversationId, fresh))
+        void loadUsage(targetConversationId)
+          .then((fresh) =>
+            updateUsageForConversation(targetConversationId, fresh),
+          )
           .catch((err) =>
             console.error("[ChatPageClient] Failed to refresh usage", err),
           );
       }
+
+      // Update URL to reflect selected conversation
+      updateUrlShallow(`/chat/${targetConversationId}`);
+      setIsMobileSidebarOpen(false);
     },
-    [loadUsage, session?.conversation.id, updateUsageForConversation],
+    [
+      loadUsage,
+      session?.conversation.id,
+      updateUrlShallow,
+      updateUsageForConversation,
+    ],
   );
 
   const startBlankConversation = useCallback(
     async (modelId: string = DEFAULT_CHAT_MODEL_ID) => {
+      const newId = generateId();
       const conversation = await createEmptyConversation({
         modelId,
+        id: newId,
         persist: false,
       });
       const usage = await loadUsage(conversation.id);
       setSession({ conversation, messages: [], usage });
+
+      // Update URL to new chat
+      updateUrlShallow(`/chat/${conversation.id}`);
+
       return conversation;
     },
-    [loadUsage],
+    [loadUsage, updateUrlShallow],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -310,53 +379,91 @@ export function ChatPageClient() {
 
   if (isBootstrapping || !session) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-white">
-        {error ? (
-          <p className="text-sm text-red-500">{error}</p>
-        ) : (
-          <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-600">
-            <Loader2 className="h-4 w-4 animate-spin text-slate-500" />{" "}
-            Preparing chat…
+      <div className="flex h-screen w-full items-center justify-center bg-white px-6 text-slate-800">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="h-11 w-11 rounded-full border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] flex items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
           </div>
-        )}
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-slate-800">Loading chat…</p>
+            <p className="text-xs text-slate-500 max-w-xs">
+              Restoring your conversations and context.
+            </p>
+            {error && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-md px-2.5 py-1 mt-1">
+                {error}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-white">
-      <ChatSidebar
-        usage={session.usage}
-        conversations={history}
-        activeConversationId={session.conversation.id}
-        onNewChat={handleNewChat}
-        onSelectConversation={handleSelectConversation}
-        onDeleteConversation={handleDeleteConversation}
-      />
-      <ChatWorkspace
-        key={session.conversation.id}
-        session={session}
-        onUsageChange={(usage) =>
-          setSession((prev) => (prev ? { ...prev, usage } : prev))
-        }
-        onConversationUpdate={handleConversationUpdate}
-        onTitleStream={handleTitleStream}
-        loadUsage={loadUsage}
-        refreshHistory={refreshHistory}
-        onNewChat={handleNewChat}
-      />
+    <div className="flex h-dvh min-h-screen w-full overflow-hidden bg-white">
+      <div className="hidden h-full md:flex">
+        <ChatSidebar
+          usage={session.usage}
+          conversations={history}
+          activeConversationId={session.conversation.id}
+          onNewChat={handleNewChat}
+          onSelectConversation={handleSelectConversation}
+          onDeleteConversation={handleDeleteConversation}
+        />
+      </div>
+
+      {isMobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] md:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        >
+          <div
+            className="absolute inset-y-0 left-0 w-[min(92vw,360px)] shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <ChatSidebar
+              usage={session.usage}
+              conversations={history}
+              activeConversationId={session.conversation.id}
+              onNewChat={handleNewChat}
+              onSelectConversation={handleSelectConversation}
+              onDeleteConversation={handleDeleteConversation}
+              variant="mobile"
+              onClose={() => setIsMobileSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1">
+        <ChatWorkspace
+          session={session}
+          onUsageChange={(usage) =>
+            setSession((prev) => (prev ? { ...prev, usage } : prev))
+          }
+          onConversationUpdate={handleConversationUpdate}
+          onTitleStream={handleTitleStream}
+          loadUsage={loadUsage}
+          refreshHistory={refreshHistory}
+          onNewChat={handleNewChat}
+          onOpenSidebar={() => setIsMobileSidebarOpen(true)}
+        />
+      </div>
     </div>
   );
 }
 
 type ChatWorkspaceProps = {
   session: SessionState;
+  className?: string;
   onUsageChange: (usage: UsageSnapshot) => void;
   onConversationUpdate: (conversation: StoredConversation) => void;
   onTitleStream: (conversationId: string, newTitle: string) => void;
-  loadUsage: (conversationId: string) => Promise<UsageSnapshot>;
+  loadUsage: (conversationId?: string) => Promise<UsageSnapshot>;
   refreshHistory: () => Promise<StoredConversation[]>;
   onNewChat: () => void;
+  onOpenSidebar: () => void;
 };
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];
@@ -392,6 +499,7 @@ type PendingRequest = {
  */
 function ChatWorkspace({
   session,
+  className,
   onUsageChange,
   onConversationUpdate,
   onTitleStream,
@@ -643,9 +751,30 @@ function ChatWorkspace({
     if (existing) {
       return;
     }
-    await createConversation(session.conversation);
+
+    // Check rate limit before creating new conversation
+    const { canStartConversation } = await import(
+      "@/lib/chat/clientRateLimiter"
+    );
+    const check = await canStartConversation();
+    if (!check.allowed) {
+      throw new Error(
+        check.reason === "cooldown"
+          ? "⏳ You're in a cooldown period. Please try again later."
+          : "Global message limit reached. Please try again later.",
+      );
+    }
+
+    await upsertConversation(session.conversation);
+    // Note: We no longer record conversations against a limit.
+    // Limits are now on messages (global).
+
     await refreshHistory();
-  }, [session, refreshHistory]);
+
+    // Refresh usage after recording new conversation
+    const freshUsage = await loadUsage(session.conversation.id);
+    onUsageChange(freshUsage);
+  }, [session, refreshHistory, loadUsage, onUsageChange]);
 
   const messagesRef = useRef<ToolAwareMessage[]>([]);
 
@@ -762,7 +891,7 @@ function ChatWorkspace({
         await saveMessage({
           id: message.id,
           conversationId: session.conversation.id,
-          role: message.role,
+          role: convertRole(message.role, session.conversation.agentMode),
           content,
           documents: documents.length
             ? documents.map(cloneDocument)
@@ -771,6 +900,8 @@ function ChatWorkspace({
           parts,
           attachments: attachments.length ? attachments : undefined,
           createdAt: new Date().toISOString(),
+          // Persist the current agent mode in metadata so styling is preserved
+          data: { ...(message.data ?? {}), agent: mode },
         });
         persistedMessageSnapshots.current.set(message.id, snapshot);
 
@@ -810,6 +941,7 @@ function ChatWorkspace({
       onTitleStream,
       session.conversation,
       generateTitle,
+      mode,
     ],
   );
 
@@ -923,6 +1055,20 @@ function ChatWorkspace({
       },
     });
 
+  // Sync messages when conversation changes (for smooth switching without remount)
+  const conversationIdRef = useRef(session.conversation.id);
+  useEffect(() => {
+    if (conversationIdRef.current !== session.conversation.id) {
+      // Conversation changed - update messages immediately
+      setMessages(initialMessages);
+      conversationIdRef.current = session.conversation.id;
+      // Clear any pending state
+      setRetryAvailable(false);
+      setComposerError(null);
+      lastRequestRef.current = null;
+    }
+  }, [session.conversation.id, initialMessages, setMessages]);
+
   const fetchSuggestions = useCallback(
     async (
       assistantMessage: ToolAwareMessage,
@@ -1013,6 +1159,31 @@ function ChatWorkspace({
   useEffect(() => {
     messagesRef.current = messages as ToolAwareMessage[];
   }, [messages]);
+
+  // Stamp the active agent onto assistant messages as soon as they arrive
+  // so icon/avatar rendering remains stable even after switching agents.
+  useEffect(() => {
+    let changed = false;
+
+    const next = (messages as ToolAwareMessage[]).map((msg) => {
+      if (msg.role !== "assistant") return msg;
+
+      const agent = (msg.data as { agent?: AgentRole } | undefined)?.agent;
+      if (agent === "jay" || agent === "navigator") {
+        return msg;
+      }
+
+      changed = true;
+      return {
+        ...msg,
+        data: { ...(msg.data ?? {}), agent: mode },
+      } as ToolAwareMessage;
+    });
+
+    if (changed) {
+      setMessages(next);
+    }
+  }, [messages, mode, setMessages]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1260,108 +1431,89 @@ function ChatWorkspace({
         throw new Error(message);
       }
 
+      // Check global message rate limit
+      const { canSendMessage } = await import("@/lib/chat/clientRateLimiter");
+      const limitCheck = await canSendMessage();
+      if (!limitCheck.allowed) {
+        const message =
+          limitCheck.reason === "cooldown"
+            ? "⏳ Global message limit reached. Please wait for cooldown."
+            : "Global message limit reached.";
+        setComposerError(message);
+        throw new Error(message);
+      }
+
       if (!hasText && currentAttachments.length === 0 && !selectedJob) {
         return;
       }
 
       const parts: UIPart[] = extraParts.length ? [...extraParts] : [];
 
-      if (selectedJob) {
-        const jobContext = {
-          title: selectedJob.title,
-          employer: selectedJob.employer,
-          location: selectedJob.location,
-          salary: selectedJob.salary,
-          type: selectedJob.jobType,
-          postedDate: selectedJob.postedDate,
-          link: selectedJob.link,
-          description: selectedJob.description,
-        };
-
-        const contextString = `:::job-context ${JSON.stringify(jobContext)} :::`;
-        parts.push({ type: "text", text: contextString } as UIPart);
-
-        if (hasText) {
-          parts.push({ type: "text", text: trimmed } as UIPart);
-        } else {
-          parts.push({
-            type: "text",
-            text: "Tell me more about this role.",
-          } as UIPart);
-        }
-      } else if (hasText) {
+      if (hasText) {
         parts.push({ type: "text", text: trimmed } as UIPart);
       }
 
-      for (const attachment of currentAttachments) {
-        if (!attachment.url) continue;
+      if (selectedJob) {
         parts.push({
-          type: "file",
-          url: attachment.url,
-          name: attachment.name,
-          mimeType: attachment.type,
-          mediaType: attachment.type,
-          size: attachment.size,
-          attachmentId: attachment.id,
-        } as UIPart);
+          type: "job_context",
+          jobId: selectedJob.id,
+          jobTitle: selectedJob.title,
+        } as unknown as UIPart);
       }
 
-      const pendingRequest: PendingRequest = {
-        message: {
-          role: "user",
-          parts,
-        } as ToolAwareMessage,
-        body: {
-          conversationId: session.conversation.id,
-          modelId,
-          mode,
-          isSearchEnabled,
-          attachments: currentAttachments,
-          isNewConversation: !hasStartedRef.current,
-          // Resume context injection (Phase 5) - populated below if toggle ON
-          resumeContext: resumeContextRef.current,
+      await sendMessage(
+        { role: "user", content: trimmed, parts } as unknown as UIMessage,
+        {
+          body: {
+            conversationId: session.conversation.id,
+            modelId,
+            mode,
+            isSearchEnabled,
+            attachments: currentAttachments,
+            isNewConversation: !hasStartedRef.current,
+            resumeContext: resumeContextRef.current,
+          },
         },
-      };
-
-      lastRequestRef.current = pendingRequest;
-      setRetryAvailable(false);
-
-      try {
-        await sendMessage(pendingRequest.message, {
-          body: pendingRequest.body,
-        });
-        // Don't clear lastRequestRef here - onFinish will handle it on success
-        // This prevents race condition where streaming errors happen after resolve
-        setInput("");
-        setSelectedJob(null);
-      } catch (sendError) {
-        // onError callback handles setting retryAvailable
-        // Just log and re-throw for synchronous errors
-        console.warn(
-          "🔴 Send failed:",
-          sendError instanceof Error ? sendError.message : "Unknown error",
-        );
-        throw sendError;
-      }
+      );
     },
     [
+      input,
       retryAvailable,
       messages,
-      setMessages,
-      input,
       readyAttachments,
       hasUploadingAttachments,
       hasErroredAttachments,
       selectedJob,
-      session.conversation.id,
-      modelId,
-      isSearchEnabled,
       sendMessage,
-      setSelectedJob,
-      setComposerError,
-      mode,
     ],
   );
+
+  // Monitor for 'switchAgent' tool calls and update mode
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (
+      !lastMessage ||
+      lastMessage.role !== "assistant" ||
+      !lastMessage.toolInvocations
+    ) {
+      return;
+    }
+
+    const switchTool = lastMessage.toolInvocations.find(
+      (t) => t.toolName === "switchAgent" && t.state === "result",
+    );
+
+    if (switchTool?.args) {
+      const args = switchTool.args as { mode: "jay" | "navigator" };
+      if (args.mode && (args.mode === "jay" || args.mode === "navigator")) {
+        // Only switch if we aren't already in that mode
+        if (args.mode !== mode) {
+          console.log(`🔄 [Auto-Switch] Changing mode to ${args.mode}`);
+          handleModeChange(args.mode);
+        }
+      }
+    }
+  }, [messages, mode, handleModeChange]);
 
   const handleSubmit = useCallback(
     (e?: React.FormEvent) => {
@@ -1474,7 +1626,7 @@ function ChatWorkspace({
           }
 
           // Create temporary "Extracting" preview
-          const rId = nanoid(8);
+          const rId = generateId();
           const resumePreview: AttachmentPreview = {
             id: rId,
             name: file.name,
@@ -1550,7 +1702,7 @@ function ChatWorkspace({
           continue;
         }
 
-        const id = nanoid(8);
+        const id = generateId();
         const preview: AttachmentPreview = {
           id,
           name: file.name,
@@ -1639,6 +1791,15 @@ function ChatWorkspace({
         await sendMessage(pendingRequest.message, {
           body: pendingRequest.body,
         });
+
+        // Record usage and refresh UI
+        const { recordMessage } = await import("@/lib/chat/clientRateLimiter");
+        await recordMessage();
+
+        // Refresh usage
+        const freshUsage = await loadUsage();
+        onUsageChange(freshUsage);
+
         lastRequestRef.current = null;
       } catch (sendError) {
         setRetryAvailable(true);
@@ -1669,13 +1830,10 @@ function ChatWorkspace({
 
   return (
     <section
-      className="flex flex-1 flex-col h-full relative"
+      className={`flex flex-1 flex-col h-full relative chat-area-bg ${className ?? ""}`}
       style={workspaceStyle}
     >
-      <div
-        className="flex-1 overflow-y-auto chat-area-bg"
-        ref={scrollContainerRef}
-      >
+      <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
         <MessageList
           messages={displayMessages}
           isStreaming={isLoading}
@@ -1699,10 +1857,11 @@ function ChatWorkspace({
           onStarterClick={handleSuggestionClick}
           isLimitReached={chatDisabled}
           onSelectJob={handleSelectJob}
+          mode={mode}
         />
       </div>
 
-      <div className="w-full bg-white">
+      <div className="w-full">
         <ChatComposer
           input={input}
           onInputChange={handleInputChange}
@@ -1752,19 +1911,22 @@ function ChatWorkspace({
  */
 async function createEmptyConversation({
   modelId,
+  agentMode = "jay",
   persist = true,
-}: { modelId: string; persist?: boolean }) {
+  id,
+}: { modelId: string; agentMode?: AgentRole; persist?: boolean; id?: string }) {
   const now = new Date().toISOString();
   const conversation: StoredConversation = {
-    id: nanoid(10),
+    id: id ?? generateId(),
     title: "",
     modelId,
+    agentMode,
     createdAt: now,
     updatedAt: now,
     messageCount: 0,
   };
   if (persist) {
-    await createConversation(conversation);
+    await upsertConversation(conversation);
   }
   return conversation;
 }
@@ -1825,9 +1987,26 @@ function convertStoredMessageToUIMessage(message: StoredMessage): UIMessage {
     }
   }
 
+  const storedData = (message.data ?? {}) as Record<string, unknown>;
+  const storedAgent = (storedData as { agent?: AgentRole }).agent;
+  const persistedAgent =
+    storedAgent === "jay" || storedAgent === "navigator"
+      ? storedAgent
+      : message.role === "jay" || message.role === "navigator"
+        ? message.role
+        : undefined;
+
   return {
     id: message.id,
-    role: message.role,
+    // Convert agent roles back to 'assistant' for API compatibility
+    role:
+      message.role === "jay" || message.role === "navigator"
+        ? "assistant"
+        : message.role,
+    // Persist original agent role for styling
+    data: persistedAgent
+      ? { ...storedData, agent: persistedAgent }
+      : storedData,
     parts,
   } as UIMessage;
 }

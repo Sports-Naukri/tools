@@ -64,16 +64,33 @@ export type StoredToolInvocation = {
 };
 
 /**
+ * Agent types that can respond to messages.
+ * - jay: Document creation, resume writing assistant
+ * - navigator: Job search and career guidance assistant
+ */
+export type AgentRole = "jay" | "navigator";
+
+/**
+ * Message sender types.
+ * - user: Human user
+ * - jay/navigator: AI agents
+ * - system: Hidden system messages for context
+ */
+export type MessageRole = "user" | AgentRole | "system";
+
+/**
  * Database representation of a chat message.
  *
  * Includes all data needed to restore a message with its attachments,
  * generated documents, and tool call results.
  */
 export type StoredMessage = {
+  /** UUID v4 identifier */
   id: string;
   /** Foreign key to conversation */
   conversationId: string;
-  role: "user" | "assistant" | "system";
+  /** Who sent this message */
+  role: MessageRole;
   /** Plain text or markdown content */
   content: string;
   /** ISO 8601 timestamp */
@@ -88,6 +105,12 @@ export type StoredMessage = {
   parts?: SerializedMessagePart[];
   /** Error message if message failed to process */
   error?: string | null;
+  /** Token count for this message (for analytics) */
+  tokenCount?: number;
+  /** User feedback: 1 = thumbs up, -1 = thumbs down, 0 = none */
+  feedback?: -1 | 0 | 1;
+  /** Arbitrary metadata (e.g. agent identity) */
+  data?: Record<string, unknown>;
 };
 
 /**
@@ -95,19 +118,26 @@ export type StoredMessage = {
  * Metadata only - messages are stored separately.
  */
 export type StoredConversation = {
+  /** UUID v4 identifier */
   id: string;
   /** Auto-generated or user-edited title */
   title: string;
   /** AI model ID used for this conversation */
   modelId: string;
+  /** Which agent is primarily used (jay or navigator) */
+  agentMode: AgentRole;
   /** ISO 8601 timestamp when created */
   createdAt: string;
   /** ISO 8601 timestamp of last message */
   updatedAt: string;
   /** Denormalized count for UI display */
   messageCount: number;
+  /** User marked as favorite */
+  isStarred?: boolean;
   /** Soft delete flag */
   isArchived?: boolean;
+  /** Total tokens used in this conversation */
+  totalTokens?: number;
 };
 
 /**
@@ -133,6 +163,8 @@ export type StoredUsageSnapshot = {
  * Version history:
  * - v1: Initial schema with conversations and messages
  * - v2: Added usageSnapshots table for rate limit caching
+ * - v3: Added rateLimitState for client-side rate limiting
+ * - v4: UUID IDs, agent roles (jay/navigator), enhanced fields
  */
 class ChatDatabase extends Dexie {
   /** Conversation metadata table */
@@ -141,6 +173,16 @@ class ChatDatabase extends Dexie {
   messages!: Table<StoredMessage, string>;
   /** Usage/rate limit cache table */
   usageSnapshots!: Table<StoredUsageSnapshot, string>;
+  /** Client-side rate limit state (singleton) */
+  rateLimitState!: Table<
+    {
+      id: "singleton";
+      messageCount: number;
+      cooldownEndsAt: number;
+      updatedAt: string;
+    },
+    string
+  >;
 
   constructor() {
     super("sportsnaukri-chat");
@@ -157,11 +199,59 @@ class ChatDatabase extends Dexie {
       messages: "&id, conversationId, createdAt",
       usageSnapshots: "&conversationId, updatedAt",
     });
+
+    // v3: Added client-side rate limit state
+    this.version(3).stores({
+      conversations: "&id, createdAt, updatedAt",
+      messages: "&id, conversationId, createdAt",
+      usageSnapshots: "&conversationId, updatedAt",
+      rateLimitState: "&id",
+    });
+
+    // v4: Enhanced schema with agent roles and new indexes
+    this.version(4)
+      .stores({
+        conversations: "&id, createdAt, updatedAt, agentMode, isStarred",
+        messages: "&id, conversationId, createdAt, role",
+        usageSnapshots: "&conversationId, updatedAt",
+        rateLimitState: "&id",
+      })
+      .upgrade(async (tx) => {
+        // Migrate old 'assistant' role to 'jay' (default agent)
+        await tx
+          .table("messages")
+          .toCollection()
+          .modify((message) => {
+            if (message.role === "assistant") {
+              message.role = "jay";
+            }
+          });
+
+        // Add agentMode to existing conversations
+        await tx
+          .table("conversations")
+          .toCollection()
+          .modify((conv) => {
+            if (!conv.agentMode) {
+              conv.agentMode = "jay"; // Default to jay
+            }
+          });
+
+        console.log("📦 Migrated to schema v4: agent roles enabled");
+      });
   }
 }
 
 /** Singleton database instance */
 export const chatDb = new ChatDatabase();
+
+/**
+ * Generate a UUID v4 identifier.
+ * Used for all new conversations and messages.
+ */
+export function generateId(): string {
+  return crypto.randomUUID();
+}
 
 // ============================================================================
 // Conversation Operations
@@ -214,6 +304,7 @@ export async function getLatestConversation() {
 /**
  * Lists conversations, ordered by most recently updated.
  * Used to populate the sidebar conversation list.
+ * Only includes conversations that have messages (hides empty drafts).
  *
  * @param limit - Maximum number of conversations to return (default: 20)
  * @returns Array of conversations, newest first
@@ -222,6 +313,7 @@ export async function listConversations(limit = 20) {
   return chatDb.conversations
     .orderBy("updatedAt")
     .reverse()
+    .filter((conv) => conv.messageCount > 0)
     .limit(limit)
     .toArray();
 }

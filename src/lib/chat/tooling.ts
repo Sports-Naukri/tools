@@ -72,4 +72,6 @@ export type ToolInvocationRecord = {
 export type ToolAwareMessage = UIMessage & {
   /** Array of tool invocations attached to this message */
   toolInvocations?: ToolInvocationRecord[];
+  /** Arbitrary metadata (e.g. agent identity) from storage */
+  data?: Record<string, unknown>;
 };

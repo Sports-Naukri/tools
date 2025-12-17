@@ -180,3 +180,52 @@ export async function cleanupOldUploads(): Promise<void> {
 
   await resumeDb.uploads.where("uploadedAt").below(cutoff).delete();
 }
+
+// ============================================================================
+// Shared Upload State (for cross-component sync)
+// ============================================================================
+
+export type UploadState =
+  | "idle"
+  | "parsing"
+  | "extracting"
+  | "success"
+  | "error";
+
+const UPLOAD_STATE_KEY = "sportsnaukri-resume-upload-state";
+
+/**
+ * Get current upload state (for components to poll)
+ */
+export function getUploadState(): UploadState {
+  if (typeof window === "undefined") return "idle";
+  const state = localStorage.getItem(UPLOAD_STATE_KEY);
+  if (
+    state === "parsing" ||
+    state === "extracting" ||
+    state === "success" ||
+    state === "error"
+  ) {
+    return state;
+  }
+  return "idle";
+}
+
+/**
+ * Set upload state (for cross-component sync)
+ */
+export function setUploadState(state: UploadState): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(UPLOAD_STATE_KEY, state);
+  // Dispatch storage event for same-tab listeners
+  window.dispatchEvent(
+    new StorageEvent("storage", { key: UPLOAD_STATE_KEY, newValue: state }),
+  );
+}
+
+/**
+ * Clear upload state (reset to idle)
+ */
+export function clearUploadState(): void {
+  setUploadState("idle");
+}

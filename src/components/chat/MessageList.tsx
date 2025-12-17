@@ -21,9 +21,11 @@ import {
   Briefcase,
   ChevronDown,
   ChevronUp,
+  Compass,
   FileText,
   RefreshCw,
   User,
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -58,9 +60,11 @@ export type MessageListProps = {
   onSelectJob?: (job: Job) => void;
   suggestionsByMessage?: Record<string, ChatSuggestion[]>;
   onSuggestionSelect?: (messageId: string) => void;
+  mode?: "jay" | "navigator";
 };
 
-const STARTER_QUESTIONS = [
+// Jay mode starter questions - focused on jobs, resumes, interviews
+const JAY_STARTER_QUESTIONS = [
   {
     heading: "Resume Help",
     text: "Help me write a resume for a Football Coach position.",
@@ -74,8 +78,28 @@ const STARTER_QUESTIONS = [
     text: "Create a cover letter for a Gym Manager role.",
   },
   {
-    heading: "Career Advice",
+    heading: "Find Jobs",
+    text: "Show me sports marketing jobs in Delhi.",
+  },
+];
+
+// Navigator mode starter questions - focused on career paths and skill mapping
+const NAVIGATOR_STARTER_QUESTIONS = [
+  {
+    heading: "Career Path",
+    text: "What career paths are available for someone with coaching experience?",
+  },
+  {
+    heading: "Skill Mapping",
+    text: "I have skills in data analysis and sports knowledge. What roles fit me?",
+  },
+  {
+    heading: "Industry Transition",
     text: "How do I transition from athlete to sports administration?",
+  },
+  {
+    heading: "Upskilling",
+    text: "What certifications should I get for sports management?",
   },
 ];
 
@@ -96,8 +120,11 @@ export function MessageList({
   onSelectJob,
   suggestionsByMessage = {},
   onSuggestionSelect,
+  mode = "jay",
 }: MessageListProps) {
   const handleStarter = onStarterClick ?? onSuggestionClick;
+  const starterQuestions =
+    mode === "navigator" ? NAVIGATOR_STARTER_QUESTIONS : JAY_STARTER_QUESTIONS;
   return (
     <div className="flex flex-col gap-6 p-4 md:p-8 max-w-3xl mx-auto w-full">
       {messages.length === 0 && (
@@ -116,7 +143,7 @@ export function MessageList({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
-            {STARTER_QUESTIONS.map((q, i) => (
+            {starterQuestions.map((q, i) => (
               <button
                 type="button"
                 key={i}
@@ -168,6 +195,7 @@ export function MessageList({
               documentLookup={documentLookup}
               isStreamingAssistant={isAssistantStreaming}
               onSelectJob={onSelectJob}
+              mode={mode}
             />
             {!isAssistantStreaming && suggestions.length > 0 && (
               <SuggestionRow
@@ -260,7 +288,7 @@ function GeneratingIndicator() {
       <div className="ai-generating-indicator">
         <div className="ai-generating-indicator-inner">
           <div className="indicator-dot" />
-          <span key={textIndex} className="morphing-text-enter min-w-[120px]">
+          <span key={textIndex} className="morphing-text-enter min-w-30">
             {GENERATING_PHRASES[textIndex]}
             <span className="animate-pulse">...</span>
           </span>
@@ -276,6 +304,7 @@ type MessageBubbleProps = {
   documentLookup: Partial<Record<string, CanvasDocument>>;
   isStreamingAssistant?: boolean;
   onSelectJob?: (job: Job) => void;
+  mode?: "jay" | "navigator";
 };
 
 /**
@@ -288,16 +317,44 @@ function MessageBubble({
   documentLookup,
   isStreamingAssistant = false,
   onSelectJob,
+  mode = "jay",
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
+
+  // Extract persistent agent role if available, fallback to current mode
+  const messageData = message.data as
+    | { agent?: "jay" | "navigator" }
+    | undefined;
+  const effectiveMode =
+    messageData?.agent === "jay" || messageData?.agent === "navigator"
+      ? messageData.agent
+      : mode;
+
+  const isNavigator = effectiveMode === "navigator";
+
+  // Select avatar and style based on mode
+  const AvatarIcon = isNavigator ? Compass : Zap;
+  const avatarClass = isNavigator
+    ? "bg-red-50 text-red-600"
+    : "bg-yellow-50 text-yellow-600";
+  const bubbleBorderClass = !isUser
+    ? isNavigator
+      ? "border border-red-200/60 shadow-[0_1px_2px_rgba(220,38,38,0.05)]"
+      : "border border-yellow-200/60 shadow-[0_1px_2px_rgba(234,179,8,0.05)]"
+    : "";
 
   return (
     <div
       className={clsx("flex gap-4", isUser ? "justify-end" : "justify-start")}
     >
       {!isUser && (
-        <div className="shrink-0 mt-1 h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
-          <Bot className="h-5 w-5" />
+        <div
+          className={clsx(
+            "shrink-0 mt-1 h-8 w-8 rounded-full flex items-center justify-center",
+            avatarClass,
+          )}
+        >
+          <AvatarIcon className="h-5 w-5" />
         </div>
       )}
       <div
@@ -305,7 +362,7 @@ function MessageBubble({
           "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed flex flex-col gap-2 message-enter",
           isUser
             ? "bg-[#006dff] text-white rounded-br-sm user-message-glow"
-            : "assistant-message text-slate-900",
+            : clsx("assistant-message text-slate-900", bubbleBorderClass),
         )}
       >
         {message.parts.map((part, index) => {

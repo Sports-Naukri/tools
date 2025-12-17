@@ -134,23 +134,23 @@ export function ChatComposer({
     hasUploadingAttachments ||
     hasErroredAttachments;
 
-  // Theme colors based on mode
+  // Theme colors based on mode - Jay is yellow, Navigator is red
   const isNavigatorMode = mode === "navigator";
-  const primaryColor = isNavigatorMode ? "#8B5CF6" : "#006dff";
+  const primaryColor = isNavigatorMode ? "#DC2626" : "#EAB308"; // red-600 : yellow-500
 
-  // Stronger glow shadow based on mode
+  // Stronger glow shadow based on mode - Reduced opacity
   const glowShadow = isNavigatorMode
-    ? "0 0 20px rgba(139, 92, 246, 0.3), 0 0 40px rgba(139, 92, 246, 0.15)"
-    : "0 0 20px rgba(0, 109, 255, 0.3), 0 0 40px rgba(0, 109, 255, 0.15)";
+    ? "0 0 20px rgba(220, 38, 38, 0.15), 0 0 40px rgba(220, 38, 38, 0.05)" // red aura - much lower opacity
+    : "0 0 20px rgba(234, 179, 8, 0.2), 0 0 40px rgba(234, 179, 8, 0.1)"; // yellow aura - lower opacity
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4 pb-6">
+    <div className="w-full max-w-3xl mx-auto px-4 pb-4">
       {/* Chrome-style tabs container with form */}
       <form
         onSubmit={onSubmit}
         className={clsx(
           "relative flex flex-col rounded-2xl border bg-white transition-all",
-          isNavigatorMode ? "border-violet-200" : "border-slate-200",
+          isNavigatorMode ? "border-red-200" : "border-yellow-200",
           disabled && "bg-slate-50",
         )}
         style={{ boxShadow: glowShadow }}
@@ -201,14 +201,14 @@ export function ChatComposer({
               className={clsx(
                 "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-all rounded-md tracking-tight",
                 mode === "jay"
-                  ? "bg-white text-blue-600 shadow-sm ring-1 ring-black/5"
+                  ? "bg-white text-yellow-600 shadow-sm ring-1 ring-black/5"
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50",
               )}
             >
               <div
                 className={clsx(
                   "h-1.5 w-1.5 rounded-full",
-                  mode === "jay" ? "bg-blue-500" : "bg-slate-400",
+                  mode === "jay" ? "bg-yellow-500" : "bg-slate-400",
                 )}
               />
               <span>Jay</span>
@@ -219,14 +219,14 @@ export function ChatComposer({
               className={clsx(
                 "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-all rounded-md tracking-tight",
                 mode === "navigator"
-                  ? "bg-white text-violet-600 shadow-sm ring-1 ring-black/5"
+                  ? "bg-white text-red-600 shadow-sm ring-1 ring-black/5"
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50",
               )}
             >
               <div
                 className={clsx(
                   "h-1.5 w-1.5 rounded-full",
-                  mode === "navigator" ? "bg-violet-500" : "bg-slate-400",
+                  mode === "navigator" ? "bg-red-500" : "bg-slate-400",
                 )}
               />
               <span>Navigator</span>
@@ -354,9 +354,9 @@ export function ChatComposer({
             onKeyDown={handleKeyDown}
             placeholder="Type your message here..."
             className={clsx(
-              "min-h-[60px] w-full resize-none bg-transparent px-4 pb-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50",
+              "min-h-[44px] w-full resize-none bg-transparent px-4 pb-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50",
               onModeChange && !attachments.length && !selectedJob
-                ? "pt-14"
+                ? "pt-12"
                 : "pt-4",
             )}
             rows={1}

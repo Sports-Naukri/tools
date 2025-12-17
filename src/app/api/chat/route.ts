@@ -49,14 +49,8 @@ import {
   type ChatErrorResponse,
   getErrorMessage,
 } from "@/lib/errors/codes";
-import { getClientIp } from "@/lib/ip";
-import {
-  RateLimitError,
-  checkCanSendMessage,
-  checkCanStartConversation,
-  confirmMessageSent,
-  confirmNewConversation,
-} from "@/lib/rateLimiter";
+// Note: Rate limiting is now handled client-side via IndexedDB
+// See: lib/chat/clientRateLimiter.ts
 
 // ============================================================================
 // Internal Imports - Tools & Features
@@ -133,6 +127,184 @@ const followupToolInputSchema = z.object({
 const getEnabledModel = (modelId: string) =>
   CHAT_MODELS.find((model) => model.id === modelId && model.isEnabled);
 
+// ============================================================================
+// Zero-LLM Job Search Bypass
+// ============================================================================
+// Detects simple job search queries and returns results directly without AI
+
+/** Patterns that indicate a job search query */
+const JOB_SEARCH_PATTERNS = [
+  /\b(find|search|show|get|list|look for|looking for)\s+(me\s+)?(jobs?|openings?|vacancies|positions?|opportunities)/i,
+  /\b(jobs?|openings?|vacancies|positions?)\s+(for|in|at|near)\b/i,
+  /\b(hiring|who('s| is) hiring)\b/i,
+  /\bjob\s+(search|hunt|hunting)\b/i,
+  /\bcareer\s+(opportunities|openings)\b/i,
+];
+
+/** Check if message is a simple job search that can bypass LLM */
+function detectJobSearchIntent(message: string): {
+  isJobSearch: boolean;
+  searchQuery: string;
+  location?: string;
+} {
+  const normalized = message.toLowerCase().trim();
+
+  // Check if it matches job search patterns
+  const isJobSearch = JOB_SEARCH_PATTERNS.some((pattern) =>
+    pattern.test(normalized),
+  );
+  if (!isJobSearch) {
+    return { isJobSearch: false, searchQuery: "" };
+  }
+
+  // Extract the job type/role being searched
+  // Common patterns: "find me [role] jobs", "jobs for [role]", "[role] openings"
+  let searchQuery = "";
+
+  // Try to extract role: "find X jobs", "X jobs", "jobs for X"
+  const rolePatterns = [
+    /(?:find|search|show|get|list|look(?:ing)? for)\s+(?:me\s+)?(.+?)\s+(?:jobs?|openings?|positions?|vacancies)/i,
+    /(.+?)\s+(?:jobs?|openings?|positions?|vacancies)\s+(?:for|in|at|near)/i,
+    /(?:jobs?|openings?|positions?|vacancies)\s+(?:for|as|in)\s+(.+?)(?:\s+in\s+|$)/i,
+    /(.+?)\s+(?:jobs?|openings?|positions?)$/i,
+  ];
+
+  for (const pattern of rolePatterns) {
+    const match = normalized.match(pattern);
+    if (match?.[1]) {
+      searchQuery = match[1].trim();
+      // Remove common filler words
+      searchQuery = searchQuery.replace(/^(a|an|the|some|any)\s+/i, "");
+      break;
+    }
+  }
+
+  // If no specific query extracted, use the full message as search
+  if (!searchQuery) {
+    searchQuery = normalized
+      .replace(
+        /\b(find|search|show|get|list|look for|looking for|me|jobs?|openings?|vacancies|positions?|opportunities)\b/gi,
+        "",
+      )
+      .trim();
+  }
+
+  // Extract location if mentioned: "in [location]", "at [location]", "near [location]"
+  let location: string | undefined;
+  const locationMatch = normalized.match(
+    /(?:in|at|near)\s+([a-z\s]+?)(?:\s|$)/i,
+  );
+  if (locationMatch?.[1]) {
+    const possibleLocation = locationMatch[1].trim();
+    // Basic check - if it looks like a city name (not a role)
+    const cities = [
+      "mumbai",
+      "delhi",
+      "bangalore",
+      "bengaluru",
+      "chennai",
+      "kolkata",
+      "hyderabad",
+      "pune",
+      "jaipur",
+      "remote",
+      "india",
+    ];
+    if (cities.some((city) => possibleLocation.includes(city))) {
+      location = possibleLocation;
+    }
+  }
+
+  return { isJobSearch: true, searchQuery: searchQuery || "sports", location };
+}
+
+/** Create a streaming response for job search bypass (no LLM) */
+async function createJobSearchBypassResponse(
+  searchQuery: string,
+  location: string | undefined,
+  conversationId: string,
+): Promise<Response> {
+  console.log(
+    `⚡ [BYPASS] Direct job search: "${searchQuery}" | Location: ${location || "any"}`,
+  );
+
+  // Fetch jobs directly
+  const requestId = crypto.randomUUID();
+  const results = await fetchJobs({
+    search: searchQuery,
+    location,
+    limit: 10,
+    telemetry: {
+      conversationId,
+      requestId,
+      requestedAt: new Date().toISOString(),
+    },
+  });
+
+  // Create minimal job data (strip descriptions)
+  const minimalJobs = (results.jobs ?? []).map((job) => ({
+    ...job,
+    description: "",
+    qualification: "",
+    experience: "",
+  }));
+
+  const jobCount = minimalJobs.length;
+  console.log(`⚡ [BYPASS] Found ${jobCount} jobs (0 LLM tokens used)`);
+
+  // Create a manual streaming response that mimics AI SDK format
+  // Using the AI SDK's data stream protocol
+  const toolCallId = `call_${requestId.slice(0, 8)}`;
+
+  // Build the response chunks
+  const chunks: string[] = [];
+
+  // Tool call
+  chunks.push(
+    `9:{"toolCallId":"${toolCallId}","toolName":"${JOB_SEARCH_TOOL_NAME}","args":${JSON.stringify({ search: searchQuery, location })}}\n`,
+  );
+
+  // Tool result
+  const toolResult = {
+    success: true,
+    count: jobCount,
+    total: results.total,
+    totalPages: results.totalPages,
+    currentPage: results.currentPage,
+    jobs: minimalJobs,
+    meta: {
+      telemetryId: requestId,
+      searchKeywords: [searchQuery],
+      bypass: true, // Flag for client to know this was a bypass
+    },
+  };
+  chunks.push(
+    `a:{"toolCallId":"${toolCallId}","result":${JSON.stringify(toolResult)}}\n`,
+  );
+
+  // Assistant text (minimal)
+  const responseText =
+    jobCount > 0
+      ? `I found ${jobCount} ${searchQuery} job${jobCount !== 1 ? "s" : ""} for you:`
+      : `No ${searchQuery} jobs found. Try a different search term.`;
+  chunks.push(`0:"${responseText.replace(/"/g, '\\"')}"\n`);
+
+  // Finish reason
+  chunks.push(
+    `d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`,
+  );
+
+  // Return as SSE stream
+  const responseBody = chunks.join("");
+
+  return new Response(responseBody, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Vercel-AI-Data-Stream": "v1",
+    },
+  });
+}
+
 export async function POST(req: Request) {
   try {
     console.log(
@@ -140,6 +312,27 @@ export async function POST(req: Request) {
     );
     const json = await req.json();
     const payload = chatRequestSchema.parse(json);
+
+    // ========================================================================
+    // Zero-LLM Job Search Bypass
+    // ========================================================================
+    // Check if this is a simple job search query that doesn't need AI
+    const lastMessage = payload.messages[payload.messages.length - 1];
+    const lastMessageText =
+      typeof lastMessage?.content === "string" ? lastMessage.content : "";
+
+    if (lastMessage?.role === "user" && lastMessageText) {
+      const jobSearchIntent = detectJobSearchIntent(lastMessageText);
+      if (jobSearchIntent.isJobSearch) {
+        // Bypass LLM entirely - fetch jobs and return directly
+        return createJobSearchBypassResponse(
+          jobSearchIntent.searchQuery,
+          jobSearchIntent.location,
+          payload.conversationId,
+        );
+      }
+    }
+    // ========================================================================
 
     const selectedModel = getEnabledModel(payload.modelId);
     if (!selectedModel) {
@@ -149,14 +342,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const ip = getClientIp(req.headers);
-
-    // Check limits BEFORE making AI request (don't increment yet)
-    if (payload.isNewConversation) {
-      await checkCanStartConversation(ip);
-    }
-
-    await checkCanSendMessage(ip, payload.conversationId);
+    // Rate limiting is handled client-side via IndexedDB
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
@@ -180,7 +366,9 @@ export async function POST(req: Request) {
     const resumeMeta = extractLatestResumeMeta(recentUiMessages as UIMessage[]);
     const modelMessages = convertToModelMessages(
       recentUiMessages as UIMessage[],
-    ).filter(isSupportedModelMessage);
+    )
+      .filter(isSupportedModelMessage)
+      .map(minifyModelMessage);
 
     console.log(
       `🤖 Chat API | model: ${payload.modelId} | mode: ${payload.mode} | key: ✓ | conv: ${payload.conversationId}`,
@@ -286,7 +474,28 @@ ${modeInstruction}
             console.log(
               `🔍 [Job Search] Found ${results.jobs?.length ?? 0} jobs`,
             );
-            return results;
+
+            // Return minimal data to save tokens - strip heavy fields like description
+            // The UI only needs: id, title, employer, location, salary, jobType, link
+            const minimalJobs = (results.jobs ?? []).map((job) => ({
+              ...job,
+              description: "", // Strip description to save tokens
+              qualification: "", // Strip qualification
+              experience: "", // Strip experience text
+              fullDescriptionUrl: job.link, // Keep link for "View More"
+            }));
+
+            return {
+              success: results.success,
+              count: results.count,
+              total: results.total,
+              totalPages: results.totalPages,
+              currentPage: results.currentPage,
+              jobs: minimalJobs,
+              message: results.message,
+              tips: results.tips,
+              meta: results.meta,
+            };
           },
         }),
         [FOLLOWUP_TOOL_NAME]: tool<
@@ -321,6 +530,23 @@ ${modeInstruction}
             return result;
           },
         }),
+        switchAgent: tool<
+          { mode: "jay" | "navigator"; reason: string },
+          { success: boolean; message: string }
+        >({
+          description:
+            "Switch the active agent mode. Use 'jay' for coaching/friendly chat, or 'navigator' for deep analysis/skill mapping. ONLY call this if user explicitly asks or strict need matches.",
+          inputSchema: z.object({
+            mode: z.enum(["jay", "navigator"]),
+            reason: z.string().describe("Why you are switching"),
+          }),
+          async execute({ mode, reason }) {
+            console.log(
+              `🔄 [Agent Switch] Switching to ${mode} because: ${reason}`,
+            );
+            return { success: true, message: `Switching to ${mode} agent...` };
+          },
+        }),
       },
       // Log each step's completion for debugging multi-step tool flows
       onStepFinish: ({ text, toolResults, finishReason }) => {
@@ -329,39 +555,12 @@ ${modeInstruction}
           `📍 Step | ${finishReason} | text: ${text?.length ?? 0} chars | tools: ${toolNames || "none"}`,
         );
       },
-      onFinish: async ({ usage, finishReason, text }) => {
+      onFinish: async ({ usage, finishReason }) => {
         console.log(
           `💰 Tokens | ${payload.conversationId.slice(0, 8)} | in: ${usage?.inputTokens ?? "?"} out: ${usage?.outputTokens ?? "?"} total: ${usage?.totalTokens ?? "?"} | reason: ${finishReason}`,
         );
 
-        // Only increment counters if the response was successful
-        // finishReason: "stop" = normal completion, "tool-calls" = tool was called
-        // finishReason: "error", "length", "content-filter", "unknown" = don't count
-        const isSuccess =
-          (finishReason === "stop" || finishReason === "tool-calls") &&
-          (text?.length ?? 0) > 0;
-
-        if (!isSuccess) {
-          console.warn(
-            `⚠️ Response not successful (reason: ${finishReason}, text: ${text?.length ?? 0} chars) - NOT counting toward limit`,
-          );
-          return;
-        }
-
-        try {
-          if (payload.isNewConversation) {
-            confirmNewConversation(ip);
-            console.log(
-              `✅ Confirmed new conversation for IP ${ip.slice(0, 8)}`,
-            );
-          }
-          confirmMessageSent(ip, payload.conversationId);
-          console.log(
-            `✅ Confirmed message sent in ${payload.conversationId.slice(0, 8)}`,
-          );
-        } catch (confirmError) {
-          console.error("Failed to confirm usage:", confirmError);
-        }
+        // Rate limiting is handled client-side via IndexedDB
       },
       onError: (error) => {
         console.error(
@@ -410,21 +609,7 @@ ${modeInstruction}
       );
     }
 
-    if (error instanceof RateLimitError) {
-      const errorCode =
-        error.code === "CONVERSATION_LIMIT"
-          ? ChatErrorCode.DAILY_LIMIT_REACHED
-          : ChatErrorCode.CHAT_LIMIT_REACHED;
-      console.warn(`⚠️ [${errorCode}] Rate limit:`, error.message);
-      return NextResponse.json<ChatErrorResponse>(
-        {
-          error: getErrorMessage(errorCode),
-          code: errorCode,
-          details: error.message,
-        },
-        { status: error.status },
-      );
-    }
+    // Rate limit errors are now handled client-side
 
     // Handle OpenAI rate limit errors (429)
     if (error && typeof error === "object" && "statusCode" in error) {
@@ -514,10 +699,17 @@ CAPABILITIES:
 - Use ${DOCUMENT_TOOL_NAME} for resumes, cover letters, or career documents. Always include a descriptive 'summary' field that explains what you created (e.g., "Created a resume highlighting your 5 years of sports marketing experience").
 - Call ${FOLLOWUP_TOOL_NAME} at the END of every response (unless you used ${DOCUMENT_TOOL_NAME}). Provide exactly 2 relevant follow-up questions.
 
+AGENT SWITCHING:
+- You are Jay (Coach). Ideally, stick to your role.
+- However, if the user explicitly asks for "Career Navigator" mode, or for deep data analysis of skill gaps, use the \`switchAgent\` tool.
+- Do NOT suggest switching unless the user asks or clearly needs deep technical analysis.
+
 CRITICAL - JOB SEARCH OUTPUT:
-- After calling ${JOB_SEARCH_TOOL_NAME}, DO NOT describe or list the jobs in your text response. The jobs will be displayed automatically as interactive cards.
-- Your text should only be a brief intro like "Here are some opportunities that match your search:" or "I found some relevant positions for you:"
-- Do NOT repeat job titles, companies, salaries, or details in text - the cards already show this.
+- When you use ${JOB_SEARCH_TOOL_NAME}, the user sees a visual list of job cards.
+- THEREFORE, YOU MUST NOT LIST THE JOBS IN YOUR TEXT RESPONSE.
+- Do NOT write bullet points of job titles. Do NOT summarize the jobs.
+- Your ONLY text response should be: "I found [X] jobs matching your search:"
+- If no jobs are found, you can suggest alternative keywords.
 
 INDIAN CONTEXT:
 - All job listings are from India by default
@@ -547,6 +739,11 @@ LANGUAGE:
 - If the user writes in Hindi, respond in Hindi
 - Otherwise, respond in English
 
+AGENT SWITCHING:
+- You are Navigator (Analyst). Ideally, stick to your role.
+- However, if the user explicitly asks for "Jay" or "Coach" mode, or for casual chat / basic resume help without analysis, use the \`switchAgent\` tool.
+- Do NOT suggest switching unless the user asks.
+
 SCOPE:
 - Career path exploration in sports industry
 - Skill-to-role mapping
@@ -560,7 +757,7 @@ After using any tool, you MUST write a detailed text response interpreting and p
 CAPABILITIES:
 - Use ${SKILL_MAPPER_TOOL_NAME} when users share their skills to get role mappings, training, and keywords
 - After getting skill_mapper results, ALWAYS write a formatted response with the career mapping information
-- Use ${JOB_SEARCH_TOOL_NAME} to show real job examples matching user's skill profile
+- Use ${JOB_SEARCH_TOOL_NAME} to show real job examples matching user's skill profile. DO NOT list the jobs in text; just say "Here are relevant jobs:" and let the UI show the cards.
 - Use ${DOCUMENT_TOOL_NAME} for career plans or skill summaries
 - Call ${FOLLOWUP_TOOL_NAME} at the END of every response with relevant next steps
 
@@ -851,4 +1048,33 @@ function deriveKeywordsFromSearch(search?: string | null): string[] {
     .map((keyword) => keyword.trim())
     .filter(Boolean)
     .map((keyword) => keyword.toLowerCase());
+}
+
+function minifyModelMessage(message: any): any {
+  if (message.role === "tool" && Array.isArray(message.content)) {
+    return {
+      ...message,
+      content: message.content.map((part: any) => {
+        if (
+          part.type === "tool-result" &&
+          (part.toolName === JOB_SEARCH_TOOL_NAME ||
+            // Fallback: check if result has jobs array in case name is missing
+            (part.result && Array.isArray(part.result.jobs)))
+        ) {
+          const count = part.result?.jobs?.length ?? 0;
+          return {
+            ...part,
+            result: {
+              ...part.result,
+              jobs: [], // Strip content
+              stripped: true,
+              summary: `[System] Found ${count} jobs. Details hidden from LLM to save tokens.`,
+            },
+          };
+        }
+        return part;
+      }),
+    };
+  }
+  return message;
 }

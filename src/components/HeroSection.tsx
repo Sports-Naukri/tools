@@ -38,7 +38,7 @@ export function HeroSection() {
       className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-4"
     >
       {/* Subtle Grid Background */}
-      <div className="absolute inset-0 -z-20 h-full w-full bg-white bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
+      <div className="absolute inset-0 -z-20 h-full w-full bg-white bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] bg-size-[16px_16px] mask-[radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
 
       {/* Ambient Gradient Orbs */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
@@ -53,7 +53,7 @@ export function HeroSection() {
             repeat: Number.POSITIVE_INFINITY,
             ease: "linear",
           }}
-          className="absolute top-[-10%] left-[-10%] h-[600px] w-[600px] rounded-full bg-[#006dff]/5 blur-[120px]"
+          className="absolute top-[-10%] left-[-10%] h-150 w-150 rounded-full bg-[#006dff]/5 blur-[120px]"
         />
         <motion.div
           animate={{
@@ -66,7 +66,7 @@ export function HeroSection() {
             repeat: Number.POSITIVE_INFINITY,
             ease: "linear",
           }}
-          className="absolute bottom-[-10%] right-[-10%] h-[700px] w-[700px] rounded-full bg-[#6d28d9]/5 blur-[120px]"
+          className="absolute bottom-[-10%] right-[-10%] h-175 w-175 rounded-full bg-[#6d28d9]/5 blur-[120px]"
         />
       </div>
 

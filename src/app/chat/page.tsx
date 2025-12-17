@@ -1,17 +1,14 @@
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
 
-import { ChatPageClient } from "@/components/chat/ChatPageClient";
+import { generateId } from "@/lib/chat/storage";
 
 export const dynamic = "force-dynamic";
 
-export default function ChatPage() {
-  return (
-    <div className="min-h-screen bg-linear-to-b from-white via-[#F2F7FD] to-white text-slate-900">
-      <Suspense
-        fallback={<div className="p-10 text-center text-lg">Loading chat…</div>}
-      >
-        <ChatPageClient />
-      </Suspense>
-    </div>
-  );
+/**
+ * Chat index page - redirects to a new conversation.
+ * Creates a new conversation ID and redirects to /chat/[id]
+ */
+export default function ChatIndexPage() {
+  const newId = generateId();
+  redirect(`/chat/${newId}`);
 }

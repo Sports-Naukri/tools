@@ -28,16 +28,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isSupportedResumeFile, parseResumeFile } from "@/lib/resume/parser";
 import {
+  type UploadState,
   canUpload,
   deleteProfile,
   getProfile,
   getRemainingUploads,
+  getUploadState,
   recordUpload,
   saveProfile,
 } from "@/lib/resume/storage";
 import type { ExtractedProfile } from "@/lib/resume/types";
-
-type UploadState = "idle" | "parsing" | "extracting" | "success" | "error";
 
 interface ResumeSectionProps {
   isCollapsed: boolean;
@@ -50,7 +50,8 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
   const [remainingUploads, setRemainingUploads] = useState(3);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load existing profile on mount
+  // Load existing profile on mount and poll for changes
+  // (profile may be uploaded via ResumeToggle in the chatbar)
   useEffect(() => {
     const loadProfile = async () => {
       const existingProfile = await getProfile();
@@ -59,6 +60,25 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
       setRemainingUploads(remaining);
     };
     loadProfile();
+
+    // Poll every 2 seconds to catch uploads from ResumeToggle
+    const interval = setInterval(loadProfile, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Listen for shared upload state changes from ResumeToggle (instant sync)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const state = getUploadState();
+      setUploadState(state);
+    };
+
+    // Check initial state
+    handleStorageChange();
+
+    // Listen for storage events (triggered by ResumeToggle)
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const handleUploadClick = useCallback(() => {
@@ -193,7 +213,7 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
               "w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg transition-all",
               uploadState === "parsing" || uploadState === "extracting"
                 ? "bg-slate-100 text-slate-400 cursor-wait"
-                : "bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 shadow-sm",
+                : "bg-[#006dff] text-white hover:bg-[#0056cc] shadow-sm",
             )}
           >
             {uploadState === "parsing" ? (

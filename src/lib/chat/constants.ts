@@ -16,22 +16,20 @@
 // ============================================================================
 
 /**
- * Maximum number of new conversations a user can start per day.
- * Resets at midnight in the configured timezone (default: Asia/Kolkata).
+ * Maximum number of messages a user can send globally across all conversations.
+ * This limit applies per 12-hour window (controlled by COOLDOWN_DURATION_MS).
  *
  * @constant {number}
- * @see MESSAGES_PER_CHAT_LIMIT for per-conversation limits
  */
-export const DAILY_CHAT_LIMIT = 5;
+export const GLOBAL_MESSAGE_LIMIT = 40;
 
 /**
- * Maximum number of messages a user can send in a single conversation.
- * This limit is permanent per conversation and does NOT reset.
+ * Cooldown duration when limits are exceeded.
+ * User must wait this long before they can continue.
  *
- * @constant {number}
- * @see DAILY_CHAT_LIMIT for daily conversation limits
+ * @constant {number} 12 hours in milliseconds
  */
-export const MESSAGES_PER_CHAT_LIMIT = 10;
+export const COOLDOWN_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 // ============================================================================
 // Model Configuration

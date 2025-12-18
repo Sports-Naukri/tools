@@ -158,6 +158,49 @@ jobs:
       - name: Secret scan (Gitleaks CLI)
         run: gitleaks detect --source=. --no-git --verbose
 
+  deploy-preview:
+    name: Preview Deploy (after checks)
+    needs: [lint, typecheck, build, security]
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Vercel CLI
+        run: pnpm dlx npm@latest install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: |
+          export VERCEL_TOKEN='${{ secrets.VERCEL_TOKEN }}'
+          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build Project Artifacts
+        run: |
+          export VERCEL_TOKEN='${{ secrets.VERCEL_TOKEN }}'
+          vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy Project Artifacts
+        run: |
+          export VERCEL_TOKEN='${{ secrets.VERCEL_TOKEN }}'
+          vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+
   summary:
     name: CI Summary
     runs-on: ubuntu-latest

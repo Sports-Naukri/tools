@@ -1,9 +1,7 @@
 name: Vercel Preview Deployment
 
 on:
-  push:
-    branches-ignore:
-      - main
+  workflow_dispatch:
 
 concurrency:
   group: preview-${{ github.ref }}

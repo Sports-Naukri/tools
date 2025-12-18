@@ -82,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Run tsc
-        run: pnpm dlx tsc --noEmit --pretty
+        run: pnpm exec tsc --noEmit --pretty
 
   build:
     name: Build (Next.js / serverless validation)

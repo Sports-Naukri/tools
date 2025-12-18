@@ -1,4 +1,4 @@
-import { createSocialImage, contentType, size } from "./social-image";
+import { contentType, createSocialImage, size } from "./social-image";
 
 export { contentType, size };
 export const runtime = "nodejs";

@@ -1,24 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
 type NavLink = {
   label: string;
   href: string;
 };
-
-const cedora = localFont({
-  src: [
-    {
-      path: "../../public/Cedora-BoldItalic.otf",
-      weight: "700",
-      style: "italic",
-    },
-  ],
-  display: "swap",
-});
 
 type HeaderProps = {
   navLinks: NavLink[];
@@ -33,19 +21,13 @@ export function Header({
   isMenuOpen,
   onToggleMenu,
   onCloseMenu,
-  cta,
 }: HeaderProps) {
   return (
-    <>
-      <header className="fixed top-0 z-50 w-full max-w-[100vw] bg-[#f9f7ff]">
-        <div className="container mx-auto flex h-16 max-w-full items-center gap-4 px-2 sm:px-4 lg:px-12">
-          <div className="flex flex-1 items-center gap-3">
-            <div className="flex w-full items-center gap-2">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 whitespace-nowrap text-gray-900"
-              >
-                <svg
+    <header className="fixed top-0 z-50 w-full border-b border-gray-100 bg-white/80 backdrop-blur-md transition-all duration-300">
+      <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2 group">
+            <svg
                   viewBox="0 0 1000 1000"
                   width={30}
                   height={30}
@@ -88,121 +70,84 @@ export function Header({
                     />
                   </g>
                 </svg>
-                <span
-                  className={`${cedora.className} text-lg font-semibold tracking-tight`}
-                >
-                  SportsNaukri <span className="text-[#6d28d9]">Tools</span>
-                </span>
-              </Link>
-              <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-primary md:hidden">
-                Early
-                <span className="inline-flex text-[0.95rem]" aria-hidden="true">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    height="18px"
-                    viewBox="0 -960 960 960"
-                    width="24px"
-                    fill="#6D28D9"
-                  >
-                    <path d="m422-232 207-248H469l29-227-185 267h139l-30 208ZM320-80l40-280H160l360-520h80l-40 320h240L400-80h-80Zm151-390Z" />
-                  </svg>
-                </span>
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center justify-end gap-3">
-            {cta}
-            <button
-              type="button"
-              aria-expanded={isMenuOpen}
-              aria-label={isMenuOpen ? "Close navigation" : "Open navigation"}
-              onClick={onToggleMenu}
-              className="group inline-flex items-center justify-center rounded-full border border-gray-400 p-2 transition"
-            >
-              <span className="inline-flex text-2xl" aria-hidden="true">
-              {isMenuOpen ? (
-                <svg
-                xmlns="http://www.w3.org/2000/svg"
-                height="24px"
-                viewBox="0 -960 960 960"
-                width="24px"
-                fill="#9CA3AF"
-                className="group-hover:fill-gray-600"
-                >
-                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm440-80h120v-560H640v560Zm-80 0v-560H200v560h360Zm80 0h120-120Z" />
-                </svg>
-              ) : (
-                <svg
-                xmlns="http://www.w3.org/2000/svg"
-                height="24px"
-                viewBox="0 -960 960 960"
-                width="24px"
-                fill="#9CA3AF"
-                className="group-hover:fill-gray-600"
-                >
-                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z" />
-                </svg>
-              )}
-              </span>
-            </button>
-          </div>
-        </div>
-      </header>
-      <div
-        className={`fixed top-16 inset-y-0 left-0 z-40 h-[calc(100dvh-4rem)] w-[80%] max-w-sm transform-gpu bg-[#f9f7ff] pb-10 transition-transform duration-300 ease-in-out md:w-[320px] md:max-w-none ${
-          isMenuOpen
-            ? "translate-x-0"
-            : "-translate-x-full md:-translate-x-full"
-        }`}
-      >
-        <div className="flex h-full flex-col">
-          <nav className="mt-6 flex flex-col gap-2 px-6">
+            <span className="text-lg font-bold tracking-tight text-gray-900">
+              SportsNaukri
+            </span>
+          </Link>
+
+          <nav className="hidden md:flex items-center gap-6">
             {navLinks.map((link) => (
               <Link
-                key={link.label}
+                key={link.href}
                 href={link.href}
-                onClick={onCloseMenu}
-                className="group flex items-center justify-between rounded-xl border border-transparent bg-white/60 px-4 py-3 text-base font-semibold text-gray-800 transition hover:border-primary/30 hover:bg-white hover:text-primary"
-                scroll={link.href.startsWith("#")}
+                className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900"
               >
                 {link.label}
-                <span className="inline-flex text-lg text-primary/70 transition-transform group-hover:translate-x-1">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    height="24px"
-                    viewBox="0 -960 960 960"
-                    width="24px"
-                    fill="currentColor"
-                  >
-                    <path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z" />
-                  </svg>
-                </span>
               </Link>
             ))}
           </nav>
-          <div className="mt-auto px-6">
-            <div className="mt-8 rounded-2xl border border-primary/20 bg-white/70 p-4 text-sm text-gray-700 shadow-sm">
-              <p className="mb-3 font-medium text-gray-900">
-                Explore more with SportsNaukri
-              </p>
-              <Link
-                href="https://sportsnaukri.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 font-semibold text-primary-foreground transition text-xs md:text-sm"
-              >
-                Visit SportsNaukri.com
-                <span
-                  className="inline-flex transition-transform group-hover:translate-x-0.5"
-                  aria-hidden="true"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#FFFFFF"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z"/></svg>
-                </span>
-              </Link>
-            </div>
-          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <Link
+            href="/chat"
+            className="hidden rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 md:block"
+          >
+            Try Chat
+          </Link>
+
+          <button
+            type="button"
+            className="md:hidden p-2 text-gray-600"
+            onClick={onToggleMenu}
+            aria-label="Toggle menu"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="h-6 w-6"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d={
+                  isMenuOpen
+                    ? "M6 18L18 6M6 6l12 12"
+                    : "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+                }
+              />
+            </svg>
+          </button>
         </div>
       </div>
-    </>
+
+      {/* Mobile Menu */}
+      {isMenuOpen && (
+        <div className="fixed inset-0 top-16 z-40 bg-white md:hidden">
+          <nav className="flex flex-col p-4">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="border-b border-gray-100 py-4 text-lg font-medium text-gray-900"
+                onClick={onCloseMenu}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <Link
+              href="/chat"
+              className="mt-4 rounded-lg bg-gray-900 py-3 text-center text-lg font-medium text-white"
+              onClick={onCloseMenu}
+            >
+              Try Chat
+            </Link>
+          </nav>
+        </div>
+      )}
+    </header>
   );
 }

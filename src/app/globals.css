@@ -10,20 +10,20 @@
     --card-foreground: 224 71.4% 4.1%;
     --popover: 0 0% 100%;
     --popover-foreground: 224 71.4% 4.1%;
-    --primary: 263.4 70% 50.4%;
-    --primary-foreground: 210 20% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    --primary: 214 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 263.4 70% 50.4%;
-    --radius: 1rem;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 214 100% 50%;
+    --radius: 0.5rem;
     --font-sans: "Inter", sans-serif;
   }
 
@@ -33,6 +33,25 @@
     font-family: var(--font-sans, "Inter", sans-serif);
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #006dff;
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #0056cc;
   }
 }
 
@@ -119,7 +138,7 @@
 }
 
 .shadow-primary\/30 {
-  box-shadow: 0 8px 32px 0 rgba(168, 85, 247, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 109, 255, 0.3);
 }
 
 .group:hover .group-hover\:bg-primary\/20 {
@@ -139,7 +158,7 @@
 }
 
 .group:hover .group-hover\:shadow-primary\/30 {
-  box-shadow: 0 8px 32px 0 rgba(168, 85, 247, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 109, 255, 0.3);
 }
 
 @keyframes fadeIn {
@@ -178,7 +197,7 @@
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(0, 0, 0, 0.05);
-  box-shadow: 0 8px 32px 0 rgba(168, 85, 247, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 109, 255, 0.1);
 }
 
 .card-glow {
@@ -192,7 +211,7 @@
   inset: 0;
   background: radial-gradient(
     400px circle at var(--mouse-x) var(--mouse-y),
-    rgba(168, 85, 247, 0.2),
+    rgba(0, 109, 255, 0.2),
     transparent 80%
   );
   opacity: 0;
@@ -208,15 +227,15 @@
 .hero-bg {
   background-image: radial-gradient(
       at 27% 37%,
-      hsla(263, 70%, 50%, 0.1) 0px,
+      hsla(214, 100%, 50%, 0.1) 0px,
       transparent 50%
     ),
-    radial-gradient(at 97% 21%, hsla(263, 70%, 50%, 0.05) 0px, transparent 50%),
-    radial-gradient(at 52% 99%, hsla(263, 70%, 50%, 0.1) 0px, transparent 50%),
-    radial-gradient(at 10% 29%, hsla(263, 70%, 50%, 0.05) 0px, transparent 50%),
-    radial-gradient(at 97% 96%, hsla(263, 70%, 50%, 0.1) 0px, transparent 50%),
-    radial-gradient(at 33% 50%, hsla(263, 70%, 50%, 0.08) 0px, transparent 50%),
-    radial-gradient(at 79% 53%, hsla(263, 70%, 50%, 0.1) 0px, transparent 50%);
+    radial-gradient(at 97% 21%, hsla(214, 100%, 50%, 0.05) 0px, transparent 50%),
+    radial-gradient(at 52% 99%, hsla(214, 100%, 50%, 0.1) 0px, transparent 50%),
+    radial-gradient(at 10% 29%, hsla(214, 100%, 50%, 0.05) 0px, transparent 50%),
+    radial-gradient(at 97% 96%, hsla(214, 100%, 50%, 0.1) 0px, transparent 50%),
+    radial-gradient(at 33% 50%, hsla(214, 100%, 50%, 0.08) 0px, transparent 50%),
+    radial-gradient(at 79% 53%, hsla(214, 100%, 50%, 0.1) 0px, transparent 50%);
   background-color: hsl(var(--background));
   background-size: 140% 140%;
   animation: hero-background-drift 18s ease-in-out infinite alternate;
@@ -262,7 +281,7 @@
 }
 
 .gradient-text {
-  background: linear-gradient(to right, #a855f7, #6d28d9, #a855f7);
+  background: linear-gradient(to right, #006dff, #3b82f6, #006dff);
   background-size: 200% auto;
   color: transparent;
   background-clip: text;
@@ -285,13 +304,13 @@
   transform: translateX(-50%);
   background: radial-gradient(
       circle at 50% 0%,
-      rgba(168, 85, 247, 0.55),
+      rgba(0, 109, 255, 0.55),
       transparent 60%
     ),
-    radial-gradient(circle at 20% 75%, rgba(79, 70, 229, 0.4), transparent 70%),
+    radial-gradient(circle at 20% 75%, rgba(59, 130, 246, 0.4), transparent 70%),
     radial-gradient(
       circle at 80% 75%,
-      rgba(236, 72, 153, 0.35),
+      rgba(96, 165, 250, 0.35),
       transparent 70%
     );
   opacity: 0.85;
@@ -310,9 +329,9 @@
   background: linear-gradient(
     to bottom,
     rgba(255, 255, 255, 0) 0%,
-    rgba(244, 242, 255, 0.5) 70%,
-    rgba(244, 242, 255, 0.7) 85%,
-    rgba(244, 242, 255, 1) 100%
+    rgba(255, 255, 255, 0.5) 70%,
+    rgba(255, 255, 255, 0.7) 85%,
+    rgba(255, 255, 255, 1) 100%
   );
   pointer-events: none;
   z-index: 1;
@@ -335,7 +354,7 @@
   color: rgba(17, 24, 39, 0.65);
   background: rgba(255, 255, 255, 0.75);
   border-radius: 999px;
-  border: 1px solid rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(0, 109, 255, 0.15);
   box-shadow: 0 10px 30px -18px rgba(17, 24, 39, 0.45);
   cursor: pointer;
   transition: transform 0.25s ease, color 0.25s ease, box-shadow 0.35s ease;
@@ -344,12 +363,12 @@
 
 .scroll-button:hover {
   color: rgba(17, 24, 39, 0.85);
-  box-shadow: 0 16px 36px -16px rgba(79, 70, 229, 0.35);
+  box-shadow: 0 16px 36px -16px rgba(59, 130, 246, 0.35);
 }
 
 .scroll-button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.25);
 }
 
 .scroll-button .scroll-icon {
@@ -391,7 +410,7 @@
 }
 
 .tools-section {
-  background-color: rgb(244, 242, 255);
+  background-color: #ffffff;
   position: relative;
 }
 
@@ -409,5 +428,253 @@
 @media (max-width: 767px) {
   .scroll-button {
     display: none;
+  }
+}
+
+.chat-markdown {
+  word-break: break-word;
+}
+
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0.35rem 0;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 1.25rem;
+}
+
+.chat-markdown li {
+  margin: 0.15rem 0;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  margin: 0.75rem 0 0.35rem;
+  font-weight: 600;
+}
+
+.chat-markdown code {
+  border-radius: 0.25rem;
+}
+
+/* ========================================
+   Chat UI Enhancements
+   ======================================== */
+
+/* --- Phase 1: Message Bubble Enhancements --- */
+
+/* Assistant message glassmorphism */
+.assistant-message {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+/* User message with subtle glow */
+.user-message-glow {
+  box-shadow: 0 4px 20px rgba(0, 109, 255, 0.25);
+}
+
+/* Message entry animation */
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: messageSlideIn 0.4s ease-out forwards;
+}
+
+/* --- Phase 2: Empty State Improvements --- */
+
+/* Starter question card enhancements */
+.starter-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.starter-card:not(:disabled):hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 28px -8px rgba(0, 109, 255, 0.15);
+  border-color: hsl(var(--primary) / 0.3) !important;
+}
+
+/* Floating background shapes for empty state */
+.empty-state-bg {
+  position: relative;
+}
+
+.empty-state-bg::before,
+.empty-state-bg::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.empty-state-bg::before {
+  width: 300px;
+  height: 300px;
+  background: hsl(214 100% 50% / 0.15);
+  top: 10%;
+  left: 10%;
+  animation: float1 8s ease-in-out infinite;
+}
+
+.empty-state-bg::after {
+  width: 250px;
+  height: 250px;
+  background: hsl(214 100% 60% / 0.1);
+  bottom: 20%;
+  right: 15%;
+  animation: float2 10s ease-in-out infinite;
+}
+
+@keyframes float1 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(30px, -20px);
+  }
+}
+
+@keyframes float2 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-20px, 30px);
+  }
+}
+
+/* --- Phase 3: Layout Improvements --- */
+
+/* Chat area subtle gradient background */
+.chat-area-bg {
+  background: radial-gradient(
+      ellipse at 20% 0%,
+      hsl(214 100% 97% / 0.8) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 80% 100%,
+      hsl(214 100% 97% / 0.6) 0%,
+      transparent 50%
+    ), linear-gradient(to bottom, #fafbfc, #ffffff);
+}
+
+/* Message wrapper for hover effects */
+.message-wrapper {
+  position: relative;
+}
+
+/* Timestamp on hover */
+.message-timestamp {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  font-size: 0.65rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.message-wrapper:hover .message-timestamp {
+  opacity: 1;
+}
+
+/* --- Phase 4: AI Generating Indicator --- */
+
+/* Container with rotating gradient border */
+.ai-generating-indicator {
+  position: relative;
+  padding: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    #006dff,
+    #3b82f6,
+    #60a5fa,
+    #93c5fd,
+    #60a5fa,
+    #3b82f6,
+    #006dff
+  );
+  background-size: 300% 100%;
+  animation: gradientBorderMove 2s linear infinite;
+}
+
+@keyframes gradientBorderMove {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 300% 50%;
+  }
+}
+
+/* Inner content area */
+.ai-generating-indicator-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: white;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  color: #475569;
+}
+
+/* Pulsing dot for the indicator */
+.indicator-dot {
+  width: 6px;
+  height: 6px;
+  background: #006dff;
+  border-radius: 50%;
+  animation: indicatorPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes indicatorPulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* Morphing text animation */
+.morphing-text-enter {
+  animation: textFadeIn 0.3s ease-out forwards;
+}
+
+@keyframes textFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

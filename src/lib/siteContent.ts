@@ -7,6 +7,18 @@
  * @see LICENSE file in the root directory for full license information.
  */
 
+/**
+ * Site Content Configuration
+ *
+ * Defines static content for the landing page to allow easy text updates
+ * without modifying UI components.
+ * includes:
+ * - Navigation links
+ * - Tool definitions (JAY, Navigator) with images and CTAs
+ *
+ * @module lib/siteContent
+ */
+
 import { cache } from "react";
 
 export type NavLink = {
@@ -28,7 +40,7 @@ export type Tool = {
 };
 
 export const getSiteContent = cache(() => {
-  const navLinks: NavLink[] = [{ label: "Solutions", href: "#tools" }];
+  const navLinks: NavLink[] = [];
 
   const tools: Tool[] = [
     {

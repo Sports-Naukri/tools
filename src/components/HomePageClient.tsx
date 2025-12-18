@@ -1,20 +1,62 @@
+/**
+ * Home Page Client Orchestrator
+ *
+ * Orchestrates the landing page interactivity.
+ * Features:
+ * - Mobile menu toggle and state management
+ * - Scroll locking when menu is open
+ * - Smooth scrolling to specific sections ("Scroll" button)
+ * - Responsiveness handlers (closing menu on resize)
+ *
+ * @module components/HomePageClient
+ */
+
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Lenis from "lenis";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { CTASection } from "@/components/CTASection";
+import { FeatureGrid } from "@/components/FeatureGrid";
+import { FloatingSearch } from "@/components/FloatingSearch";
 import { Header } from "@/components/Header";
 import { HeroSection } from "@/components/HeroSection";
 import { SiteFooter } from "@/components/SiteFooter";
-import { ToolsSection } from "@/components/ToolsSection";
-import type { NavLink, Tool } from "@/lib/siteContent";
+import type { NavLink } from "@/lib/siteContent";
 
 type HomePageClientProps = {
   navLinks: NavLink[];
-  tools: Tool[];
 };
 
-export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
+export function HomePageClient({ navLinks }: HomePageClientProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const lenisRef = useRef<Lenis | null>(null);
+
+  // Initialize Lenis smooth scroll
+  useEffect(() => {
+    const lenis = new Lenis({
+      duration: 2.5, // Increased duration for more dramatic effect
+      easing: (t) => Math.min(1, 1.001 - 2 ** (-10 * t)),
+      orientation: "vertical",
+      gestureOrientation: "vertical",
+      smoothWheel: true,
+      wheelMultiplier: 1.5, // Increased multiplier for faster initial movement
+      touchMultiplier: 2,
+    });
+
+    lenisRef.current = lenis;
+
+    function raf(time: number) {
+      lenis.raf(time);
+      requestAnimationFrame(raf);
+    }
+
+    requestAnimationFrame(raf);
+
+    return () => {
+      lenis.destroy();
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -48,8 +90,10 @@ export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
 
     if (shouldLockScroll) {
       document.body.style.overflow = "hidden";
+      lenisRef.current?.stop();
     } else {
       document.body.style.overflow = originalOverflow;
+      lenisRef.current?.start();
     }
 
     return () => {
@@ -65,70 +109,30 @@ export function HomePageClient({ navLinks, tools }: HomePageClientProps) {
     setIsMenuOpen((prev) => !prev);
   }, []);
 
-  const handleScrollClick = useCallback(() => {
-    const toolsSection = document.getElementById("tools");
-
-    if (toolsSection) {
-      const headerOffset = 72;
-      const elementPosition = toolsSection.getBoundingClientRect().top;
-      const offsetPosition = elementPosition + window.scrollY - headerOffset;
-
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: "smooth",
-      });
-      return;
-    }
-
-    window.scrollBy({ top: window.innerHeight * 0.3, behavior: "smooth" });
-  }, []);
-
   const currentYear = new Date().getFullYear();
-
-  const headerCta = useMemo(
-    () => (
-      <button className="hidden items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary transition-transform duration-200 hover:text-primary-foreground md:inline-flex">
-        <span className="inline-flex text-base" aria-hidden="true">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            height="24px"
-            viewBox="0 -960 960 960"
-            width="24px"
-            fill="#6D28D9"
-          >
-            <path d="m422-232 207-248H469l29-227-185 267h139l-30 208ZM320-80l40-280H160l360-520h80l-40 320h240L400-80h-80Zm151-390Z" />
-          </svg>
-        </span>
-        Early Access
-      </button>
-    ),
-    []
-  );
 
   return (
     <div
       id="root"
-      className="flex min-h-screen max-w-[100vw] flex-col overflow-x-hidden"
+      className="flex min-h-screen max-w-screen flex-col overflow-x-hidden bg-white"
     >
       <Header
         navLinks={navLinks}
         isMenuOpen={isMenuOpen}
         onToggleMenu={toggleMenu}
         onCloseMenu={closeMenu}
-        cta={headerCta}
       />
       <main
-        className={`relative isolate flex-1 pt-16 transform-gpu transition-transform duration-300 ease-in-out md:transition-[margin,transform,filter] ${
-          isMenuOpen
-            ? "translate-x-[80%] blur-sm md:translate-x-0 md:blur-none md:filter-none md:ml-80"
-            : "translate-x-0 md:ml-0 filter-none"
+        className={`relative isolate flex-1 pt-16 transition-all duration-300 ease-in-out ${
+          isMenuOpen ? "blur-sm md:blur-none md:ml-80" : "md:ml-0"
         }`}
-        style={{ willChange: "transform" }}
       >
-        <HeroSection onScrollClick={handleScrollClick} />
-        <ToolsSection tools={tools} />
+        <HeroSection />
+        <FeatureGrid />
+        <CTASection />
       </main>
       <SiteFooter currentYear={currentYear} isMenuOpen={isMenuOpen} />
+      <FloatingSearch />
     </div>
   );
 }

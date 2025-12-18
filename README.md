@@ -206,6 +206,43 @@ Modify `next.config.ts` for advanced configurations:
 - Headers and security
 - Environment-specific settings
 
+## 📎 Attachments & Uploads
+
+- **Allowed types**: `image/png`, `image/jpeg`, `image/webp`, `application/pdf`
+- **Max size**: 5 MB per file (client and server enforce the same limit)
+- **Count limit**: Up to 5 attachments per user message; older selections must be removed before adding more
+- **URL safety**: Remote attachments must use HTTPS and a valid absolute URL
+- **Consistency**: The upload route, chat API, and client composer all share the validation helpers in `src/lib/chat/attachments.ts`
+
+If a file violates any rule, the composer shows an inline error and the server responds with a structured validation error so the UI can surface the issue gracefully.
+
+**Manual validation checklist**
+- Attempt to attach 6 files and confirm the composer blocks the action with the count-limit error
+- Upload a file >5 MB or a disallowed MIME type and verify both the client and `/api/upload` reject it
+- Paste an `http://` or malformed URL in the attachment editor and ensure the server returns `invalid_protocol`
+- Re-run `npm run lint` after attachment changes to ensure TypeScript types stay in sync
+
+### Configuring Vercel Blob Tokens
+
+> **For a detailed step-by-step guide with screenshots and troubleshooting, see [ATTACHMENTS_SETUP_GUIDE.md](./ATTACHMENTS_SETUP_GUIDE.md).**
+
+File uploads depend on a Vercel Blob read/write token. Set it up once per environment:
+
+1. **Create or verify a Blob store**: In the Vercel dashboard, open *Storage → Blob* and create a store if you don’t already have one tied to the project.
+2. **Generate a token**: From the Blob store page, click **Tokens → Generate token**, choose **Read & Write**, and copy the value (it starts with `vercel_blob_rw_...`). Treat it like a secret.
+3. **Local development**: Add the token to `.env.local` as `BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...` and ensure `NEXT_PUBLIC_ATTACHMENTS_DISABLED=false`. Restart `npm run dev` so `/api/upload` sees the new env var.
+4. **env.example**: Keep the key present (value left blank) so other developers know it’s required. Never commit the real token.
+5. **GitHub Actions**: In your repo settings, add a new secret (e.g., `BLOB_READ_WRITE_TOKEN`) containing the token. Reference it inside your workflow and export it before `npm run build`/`npm run test`:
+
+    ```yaml
+    env:
+       BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+    ```
+
+6. **Vercel deployment**: In the Vercel project, add the same `BLOB_READ_WRITE_TOKEN` under **Settings → Environment Variables** for Production, Preview, and Development so serverless uploads work everywhere.
+
+If the token is missing or `NEXT_PUBLIC_ATTACHMENTS_DISABLED` is set to `true`, `/api/upload` will return `blob_token_missing`, and the UI will display “File uploads are not configured.”
+
 ## 📝 Scripts
 
 - `npm run dev` - Start development server

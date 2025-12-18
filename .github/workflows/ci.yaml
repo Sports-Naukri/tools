@@ -148,11 +148,12 @@ jobs:
             cat audit.json
             exit 1
           fi
-      - name: Secret scan (Gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        with:
-          config-path: ''
-          args: "detect --source=. --no-git --verbose"
+      - name: Install Gitleaks (OSS)
+        run: |
+          curl -sSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | bash
+          sudo mv gitleaks /usr/local/bin/gitleaks
+      - name: Secret scan (Gitleaks CLI)
+        run: gitleaks detect --source=. --no-git --verbose
 
   summary:
     name: CI Summary

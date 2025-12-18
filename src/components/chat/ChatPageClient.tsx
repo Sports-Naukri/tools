@@ -114,13 +114,18 @@ type SessionState = {
 type ChatPageClientProps = {
   /** Conversation ID from URL. If new, creates conversation with this ID. */
   conversationId?: string;
+  /** Optional seed message to auto-send on first load */
+  initialMessage?: string;
 };
 
 /**
  * Main client component for the chat page.
  * Handles the initialization of the chat session, loading history, and managing the active conversation.
  */
-export function ChatPageClient({ conversationId }: ChatPageClientProps) {
+export function ChatPageClient({
+  conversationId,
+  initialMessage,
+}: ChatPageClientProps) {
   const router = useRouter();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const updateUrlShallow = useCallback(
@@ -448,6 +453,7 @@ export function ChatPageClient({ conversationId }: ChatPageClientProps) {
           refreshHistory={refreshHistory}
           onNewChat={handleNewChat}
           onOpenSidebar={() => setIsMobileSidebarOpen(true)}
+          initialMessage={initialMessage}
         />
       </div>
     </div>
@@ -464,6 +470,7 @@ type ChatWorkspaceProps = {
   refreshHistory: () => Promise<StoredConversation[]>;
   onNewChat: () => void;
   onOpenSidebar: () => void;
+  initialMessage?: string;
 };
 
 type UIPart = NonNullable<UIMessage["parts"]>[number];
@@ -506,6 +513,7 @@ function ChatWorkspace({
   loadUsage,
   refreshHistory,
   onNewChat,
+  initialMessage,
 }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(
     session.conversation.modelId || DEFAULT_CHAT_MODEL_ID,
@@ -517,16 +525,31 @@ function ChatWorkspace({
     const saved = sessionStorage.getItem("sn-chat-mode");
     return (saved === "navigator" ? "navigator" : "jay") as ChatMode;
   });
+  const modeRef = useRef<ChatMode>(
+    typeof window === "undefined"
+      ? "jay"
+      : ((sessionStorage.getItem("sn-chat-mode") === "navigator"
+          ? "navigator"
+          : "jay") as ChatMode),
+  );
 
   // Persist mode changes to sessionStorage
   const handleModeChange = useCallback((newMode: ChatMode) => {
     setMode(newMode);
+    modeRef.current = newMode;
     sessionStorage.setItem("sn-chat-mode", newMode);
   }, []);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
   const isSearchEnabled = false;
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [autoSwitchMessage, setAutoSwitchMessage] = useState<string | null>(
+    null,
+  );
   const [uploadsDisabledMessage, setUploadsDisabledMessage] = useState<
     string | null
   >(ATTACHMENTS_DISABLED ? DEFAULT_UPLOADS_DISABLED_MESSAGE : null);
@@ -539,36 +562,35 @@ function ChatWorkspace({
   const resumeContextRef =
     useRef<PendingRequest["body"]["resumeContext"]>(null);
 
+  const refreshResumeContext = useCallback(async () => {
+    const enabled = await isContextEnabled();
+    if (!enabled) {
+      resumeContextRef.current = null;
+      return;
+    }
+    const profile = await getProfile();
+    if (!profile) {
+      resumeContextRef.current = null;
+      return;
+    }
+    resumeContextRef.current = {
+      name: profile.name,
+      skills: profile.skills,
+      summary: profile.summary,
+      experience: profile.experience?.map((e) => ({
+        title: e.title,
+        company: e.company,
+      })),
+    };
+  }, []);
+
   // Load resume context when in Navigator mode and context is enabled
   // Also refresh periodically to catch new uploads
   useEffect(() => {
     const loadResumeContext = async () => {
       // Load resume context for BOTH modes when toggle is ON
       // This allows Jay to use resume info when creating resumes/documents
-      const enabled = await isContextEnabled();
-      if (!enabled) {
-        resumeContextRef.current = null;
-        return;
-      }
-
-      const profile = await getProfile();
-      if (!profile) {
-        resumeContextRef.current = null;
-        return;
-      }
-
-      resumeContextRef.current = {
-        name: profile.name,
-        skills: profile.skills,
-        summary: profile.summary,
-        experience: profile.experience?.map((e) => ({
-          title: e.title,
-          company: e.company,
-        })),
-      };
-      console.log(
-        `📋 [Resume Context] Loaded: ${profile.skills.length} skills for ${mode} mode`,
-      );
+      await refreshResumeContext();
     };
 
     loadResumeContext();
@@ -576,7 +598,7 @@ function ChatWorkspace({
     // Poll every 3 seconds to catch new uploads (mirrors ResumeToggle behavior)
     const interval = setInterval(loadResumeContext, 3000);
     return () => clearInterval(interval);
-  }, [mode]);
+  }, [refreshResumeContext]);
 
   useEffect(() => {
     if (!SUGGESTIONS_DISABLED) {
@@ -584,6 +606,54 @@ function ChatWorkspace({
     }
     setSuggestionsByMessage({});
   }, []);
+
+  // Heuristic agent classifier to avoid extra LLM calls while picking the best-fit agent.
+  const classifyAgentMode = useCallback(
+    (
+      text: string,
+      options?: { hasJobContext?: boolean },
+    ): { mode: ChatMode; reason: string } => {
+      const normalized = text.toLowerCase();
+
+      // Navigator signals: job search, openings, mapping skills to roles, career planning.
+      const navigatorSignals = [
+        /\b(job|opening|vacancy|position|role)s?\b/,
+        /\b(find|search|show|get|list|looking for)\b/,
+        /\bcareer (plan|path|options|opportunities)\b/,
+        /\bskills? (to|for) (role|job|position)\b/,
+        /\bmap(ping)? skills\b/,
+        /\bwhich role\b/,
+        /\bwhat jobs\b/,
+        /\bmatch (my )?skills\b/,
+      ];
+
+      // Jay signals: resume/cover letter authoring, rewrites, coaching tone.
+      const jaySignals = [
+        /\bresume\b/,
+        /\bcover letter\b/,
+        /\bdraft|rewrite|rephrase|polish|improve\b/,
+        /\bbullet points?\b/,
+        /\bsummary\b/,
+        /\bmock interview\b/,
+        /\bcoach|coaching|encourage|motivate\b/,
+      ];
+
+      if (options?.hasJobContext) {
+        return { mode: "navigator", reason: "job context attached" };
+      }
+
+      if (navigatorSignals.some((re) => re.test(normalized))) {
+        return { mode: "navigator", reason: "job/career search intent" };
+      }
+      if (jaySignals.some((re) => re.test(normalized))) {
+        return { mode: "jay", reason: "resume/coach intent" };
+      }
+
+      // Default to Jay for general conversation.
+      return { mode: "jay", reason: "default" };
+    },
+    [],
+  );
   const attachmentFilesRef = useRef<Map<string, File>>(new Map());
   const hasUploadingAttachments = attachments.some(
     (attachment) => attachment.status === "uploading",
@@ -592,10 +662,12 @@ function ChatWorkspace({
     (attachment) => attachment.status === "error",
   );
   const [input, setInput] = useState("");
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   // True when the last request failed and the user can retry it inline.
   const [retryAvailable, setRetryAvailable] = useState(false);
   const hasStartedRef = useRef(session.conversation.messageCount > 0);
+  const initialMessageSentRef = useRef(false);
 
   // Keep the "is new conversation" flag in sync when the active conversation changes so rate limits stay accurate.
   // biome-ignore lint/correctness/useExhaustiveDependencies: session.conversation properties are sufficient
@@ -758,11 +830,7 @@ function ChatWorkspace({
     );
     const check = await canStartConversation();
     if (!check.allowed) {
-      throw new Error(
-        check.reason === "cooldown"
-          ? "⏳ You're in a cooldown period. Please try again later."
-          : "Global message limit reached. Please try again later.",
-      );
+      throw new Error("Global message limit reached. Please try again later.");
     }
 
     await upsertConversation(session.conversation);
@@ -891,7 +959,7 @@ function ChatWorkspace({
         await saveMessage({
           id: message.id,
           conversationId: session.conversation.id,
-          role: convertRole(message.role, session.conversation.agentMode),
+          role: convertRole(message.role, modeRef.current),
           content,
           documents: documents.length
             ? documents.map(cloneDocument)
@@ -980,26 +1048,59 @@ function ChatWorkspace({
         setRetryAvailable(true);
       },
       onFinish: async ({ message }) => {
-        // Check if the message actually has content - empty content means likely error
-        const hasContent = message?.parts?.some((part) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const p = part as any;
-          // Check for text content
-          if (
-            p.type === "text" &&
-            typeof p.text === "string" &&
-            p.text.trim().length > 0
-          ) {
-            return true;
-          }
-          // Check for tool outputs
-          if (p.type === "tool-invocation" || p.type?.startsWith("tool-")) {
-            return true;
-          }
-          return false;
-        });
+        // Determine if the assistant produced *any meaningful output*.
+        // NOTE: Our zero-LLM bypass + AI SDK streaming can emit tool results without text.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgAny = message as any;
+        const hasContent =
+          (!!message &&
+            (typeof msgAny?.content === "string"
+              ? msgAny.content.trim().length > 0
+              : false)) ||
+          message?.parts?.some((part) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const p = part as any;
+
+            // Text part
+            if (
+              p.type === "text" &&
+              typeof p.text === "string" &&
+              p.text.trim().length > 0
+            ) {
+              return true;
+            }
+
+            // Any tool-related part should count as content.
+            // Different AI SDK versions / adapters can encode these slightly differently.
+            if (
+              p.type === "tool-invocation" ||
+              p.type === "tool-result" ||
+              (typeof p.type === "string" && p.type.startsWith("tool-")) ||
+              p.toolCallId ||
+              p.toolName ||
+              p.result
+            ) {
+              return true;
+            }
+
+            return false;
+          }) ||
+          // Fallback: if there's a tool invocation array, it's content.
+          (Array.isArray(msgAny?.toolInvocations) &&
+            msgAny.toolInvocations.length > 0);
 
         if (hasContent) {
+          // Record the user's message against the client-side rate limiter
+          // (decrement messagesLeft + update lastMessageAt)
+          try {
+            const { recordMessage } = await import(
+              "@/lib/chat/clientRateLimiter"
+            );
+            await recordMessage();
+          } catch (err) {
+            console.error("[ChatWorkspace] failed to record message", err);
+          }
+
           // Only clear pending request on successful completion with actual content
           lastRequestRef.current = null;
           setRetryAvailable(false);
@@ -1009,11 +1110,28 @@ function ChatWorkspace({
             "⚠️ Chat finished but message is empty - keeping retry available",
           );
 
-          // Remove the empty assistant message from the chat
-          if (message?.id) {
-            setMessages((prev) => prev.filter((m) => m.id !== message.id));
-            console.log("🧹 Removed empty assistant message:", message.id);
+          // Dev-only telemetry to help us see what the UI is receiving.
+          if (process.env.NODE_ENV !== "production") {
+            try {
+              const partTypes = (message?.parts ?? []).map((part) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const p = part as any;
+                return p?.type ?? "<no-type>";
+              });
+              console.log("[ChatWorkspace] empty message debug", {
+                id: message?.id,
+                role: message?.role,
+                content: msgAny?.content,
+                partTypes,
+                parts: message?.parts,
+              });
+            } catch {
+              // ignore
+            }
           }
+
+          // Do NOT delete the assistant message automatically.
+          // If tool payloads are present but our detection missed them, deletion causes a false "Retry" loop.
 
           setRetryAvailable(true);
           setComposerError(
@@ -1436,8 +1554,8 @@ function ChatWorkspace({
       const limitCheck = await canSendMessage();
       if (!limitCheck.allowed) {
         const message =
-          limitCheck.reason === "cooldown"
-            ? "⏳ Global message limit reached. Please wait for cooldown."
+          limitCheck.reason === "message_limit"
+            ? "⏳ Global message limit reached. Please wait for reset."
             : "Global message limit reached.";
         setComposerError(message);
         throw new Error(message);
@@ -1446,6 +1564,29 @@ function ChatWorkspace({
       if (!hasText && currentAttachments.length === 0 && !selectedJob) {
         return;
       }
+
+      // Auto-select the best agent before sending to avoid wrong-tab UX.
+      const { mode: preferredMode, reason: modeReason } = classifyAgentMode(
+        trimmed,
+        { hasJobContext: Boolean(selectedJob) },
+      );
+      if (preferredMode !== mode) {
+        handleModeChange(preferredMode);
+        setAutoSwitchMessage(
+          preferredMode === "navigator"
+            ? `Switched to Navigator (${modeReason}).`
+            : `Switched to Jay (${modeReason}).`,
+        );
+        // Clear the notice after a short delay
+        setTimeout(() => setAutoSwitchMessage(null), 4000);
+      }
+
+      // Clear the composer immediately so the user sees the message was sent,
+      // and keep the cursor ready for the next prompt.
+      setInput("");
+      requestAnimationFrame(() => {
+        chatInputRef.current?.focus();
+      });
 
       const parts: UIPart[] = extraParts.length ? [...extraParts] : [];
 
@@ -1467,7 +1608,7 @@ function ChatWorkspace({
           body: {
             conversationId: session.conversation.id,
             modelId,
-            mode,
+            mode: modeRef.current,
             isSearchEnabled,
             attachments: currentAttachments,
             isNewConversation: !hasStartedRef.current,
@@ -1522,6 +1663,33 @@ function ChatWorkspace({
     },
     [submitMessage],
   );
+
+  // Auto-seed a new conversation with the initial message (from homepage CTA)
+  useEffect(() => {
+    if (!initialMessage || initialMessageSentRef.current) {
+      return;
+    }
+
+    const trimmed = initialMessage.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const hasAnyMessages =
+      session.conversation.messageCount > 0 || messages.length > 0;
+    if (hasAnyMessages) {
+      return;
+    }
+
+    initialMessageSentRef.current = true;
+    setInput(trimmed);
+    void submitMessage(trimmed);
+  }, [
+    initialMessage,
+    messages.length,
+    session.conversation.messageCount,
+    submitMessage,
+  ]);
 
   // Replays the last failed request without forcing the user to retype it.
   const handleRetry = useCallback(async () => {
@@ -1862,8 +2030,16 @@ function ChatWorkspace({
       </div>
 
       <div className="w-full">
+        {autoSwitchMessage && (
+          <div className="mx-auto mb-2 max-w-3xl px-4">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700 shadow-sm">
+              {autoSwitchMessage}
+            </div>
+          </div>
+        )}
         <ChatComposer
           input={input}
+          inputRef={chatInputRef}
           onInputChange={handleInputChange}
           onSubmit={handleSubmit}
           disabled={chatDisabled}
@@ -1891,6 +2067,9 @@ function ChatWorkspace({
           onRetryAttachment={handleRetryAttachment}
           mode={mode}
           onModeChange={handleModeChange}
+          onResumeToggleChange={() => {
+            void refreshResumeContext();
+          }}
         />
       </div>
 

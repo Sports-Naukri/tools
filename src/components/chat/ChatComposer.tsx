@@ -29,6 +29,7 @@ import {
   type ChangeEventHandler,
   type FormEventHandler,
   type KeyboardEvent,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -44,6 +45,7 @@ export type ChatMode = "jay" | "navigator";
 
 type ChatComposerProps = {
   input: string;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
   onInputChange: ChangeEventHandler<HTMLTextAreaElement>;
   onSubmit: FormEventHandler<HTMLFormElement>;
   disabled?: boolean;
@@ -66,6 +68,9 @@ type ChatComposerProps = {
   hasErroredAttachments?: boolean;
   mode?: ChatMode;
   onModeChange?: (mode: ChatMode) => void;
+
+  /** Called when the Resume On/Off toggle changes */
+  onResumeToggleChange?: (enabled: boolean) => void;
 };
 
 const MAX_INPUT_LENGTH = 4000;
@@ -76,6 +81,7 @@ const MAX_INPUT_LENGTH = 4000;
  */
 export function ChatComposer({
   input,
+  inputRef,
   onInputChange,
   onSubmit,
   disabled,
@@ -98,7 +104,11 @@ export function ChatComposer({
   hasErroredAttachments = false,
   mode = "jay",
   onModeChange,
+
+  onResumeToggleChange,
 }: ChatComposerProps) {
+  const fallbackInputRef = useRef<HTMLTextAreaElement>(null);
+  const activeInputRef = inputRef ?? fallbackInputRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   // Only show actual errors in the error area, not attachments disabled message (that shows as tooltip)
@@ -109,10 +119,70 @@ export function ChatComposer({
     ? formatDurationShort(activeLimitWindow.secondsUntilReset)
     : null;
 
+  // Live countdown timer for daily reset (midnight)
+  const [dailyResetSeconds, setDailyResetSeconds] = useState(
+    usage?.daily.secondsUntilReset ?? null,
+  );
+
+  // Sync from usage when it changes
+  useEffect(() => {
+    setDailyResetSeconds(usage?.daily.secondsUntilReset ?? null);
+  }, [usage?.daily.secondsUntilReset]);
+
+  // Tick down every second
+  useEffect(() => {
+    if (dailyResetSeconds === null || dailyResetSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setDailyResetSeconds((prev: number | null) =>
+        prev !== null && prev > 0 ? prev - 1 : prev,
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [dailyResetSeconds]);
+
+  // When the local countdown hits zero, refresh the persisted limiter state so
+  // the user sees the reset without needing a manual page refresh.
+  useEffect(() => {
+    if (!usage) return;
+    if (dailyResetSeconds !== 0) return;
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const { getClientUsageSnapshot } = await import(
+          "@/lib/chat/clientRateLimiter"
+        );
+        const fresh = await getClientUsageSnapshot();
+        if (cancelled) return;
+        setDailyResetSeconds(fresh.daily.secondsUntilReset ?? null);
+      } catch {
+        // ignore – UI will update on the next normal usage refresh
+      }
+    };
+
+    void refresh();
+    return () => {
+      cancelled = true;
+    };
+  }, [dailyResetSeconds, usage]);
+
+  // Format seconds as HH:MM:SS
+  const formatCountdown = (seconds: number | null): string | null => {
+    if (seconds === null || seconds <= 0) return null;
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const dailyResetCountdown = formatCountdown(dailyResetSeconds);
+
   // Handle Enter key to submit, Shift+Enter for new line
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      // While the assistant is streaming, keep the input editable but prevent
+      // additional sends (send button + Enter submit).
       if (!disabled && !isStreaming) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onSubmit(e as any);
@@ -168,7 +238,7 @@ export function ChatComposer({
 
               {activeResetCountdown && (
                 <p className="text-xs text-slate-500">
-                  Try again in {activeResetCountdown}. Limits reset at midnight.
+                  Try again in {activeResetCountdown}
                 </p>
               )}
 
@@ -244,7 +314,7 @@ export function ChatComposer({
           >
             {selectedJob && (
               <div className="relative flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 pr-8 text-sm text-blue-700">
-                <span className="max-w-[200px] truncate font-medium">
+                <span className="max-w-50 truncate font-medium">
                   Job: {selectedJob.title}
                 </span>
                 <button
@@ -349,18 +419,18 @@ export function ChatComposer({
 
         <div className="relative">
           <textarea
+            ref={activeInputRef}
             value={input}
             onChange={onInputChange}
             onKeyDown={handleKeyDown}
             placeholder="Type your message here..."
             className={clsx(
-              "min-h-[44px] w-full resize-none bg-transparent px-4 pb-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50",
+              "min-h-11 w-full resize-none bg-transparent px-4 pb-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50",
               onModeChange && !attachments.length && !selectedJob
                 ? "pt-12"
                 : "pt-4",
             )}
             rows={1}
-            disabled={disabled}
             maxLength={MAX_INPUT_LENGTH}
           />
           {showCharCount && (
@@ -457,7 +527,7 @@ export function ChatComposer({
             />
 
             {/* Resume upload/toggle - pill-shaped button */}
-            <ResumeToggle />
+            <ResumeToggle onToggleChange={onResumeToggleChange} />
           </div>
 
           <div className="flex items-center gap-2">
@@ -495,7 +565,7 @@ export function ChatComposer({
         {usage && (
           <span
             className={clsx(
-              "font-medium",
+              "font-medium flex items-center gap-1.5",
               usage.chat.remaining === 0
                 ? "text-red-500"
                 : usage.chat.remaining < 3
@@ -504,6 +574,11 @@ export function ChatComposer({
             )}
           >
             {usage.chat.remaining} messages left
+            {dailyResetCountdown && (
+              <span className="text-[10px] text-slate-400 font-normal tabular-nums">
+                ({dailyResetCountdown})
+              </span>
+            )}
           </span>
         )}
       </div>

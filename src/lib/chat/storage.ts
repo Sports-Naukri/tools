@@ -178,7 +178,21 @@ class ChatDatabase extends Dexie {
     {
       id: "singleton";
       messageCount: number;
+      messageTimestamps: number[];
       cooldownEndsAt: number;
+      windowStartedAt: number;
+      updatedAt: string;
+    },
+    string
+  >;
+
+  /** Client-side rate limit snapshots for "40 messages per 12h from last message" */
+  rateLimit!: Table<
+    {
+      id: "singleton";
+      messagesLeft: number;
+      lastMessageAt: number; // ms since epoch (0 means never)
+      createdAt: string;
       updatedAt: string;
     },
     string
@@ -215,6 +229,7 @@ class ChatDatabase extends Dexie {
         messages: "&id, conversationId, createdAt, role",
         usageSnapshots: "&conversationId, updatedAt",
         rateLimitState: "&id",
+        rateLimit: "&id, updatedAt",
       })
       .upgrade(async (tx) => {
         // Migrate old 'assistant' role to 'jay' (default agent)

@@ -1,239 +1,162 @@
 /**
- * Client-Side Rate Limiter
+ * Client-Side Rate Limiter (IndexedDB)
  *
- * Enforces usage limits using IndexedDB for persistence.
- * Rules:
- * - Max 40 messages globally per 12 hours
- * - Cooldown when limit is exceeded
+ * Concept (as requested):
+ * - Single record in IndexedDB holding: messagesLeft + lastMessageAt
+ * - Every user message decrements messagesLeft and updates lastMessageAt
+ * - Reset rule: if NO new message is sent for the full window duration (12h),
+ *   reset messagesLeft back to limit.
  *
- * @module lib/chat/clientRateLimiter
+ * This is different from a rolling-window limiter; it's an "inactivity reset" limiter.
  */
 
 import { COOLDOWN_DURATION_MS, GLOBAL_MESSAGE_LIMIT } from "./constants";
 import { chatDb } from "./storage";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Stored rate limit state in IndexedDB.
- */
-export type RateLimitState = {
-  /** Always "singleton" - single record */
+type RateLimitRow = {
   id: "singleton";
-  /** Total messages sent in current window */
-  messageCount: number;
-  /** Unix timestamp when cooldown ends (0 = no cooldown) */
-  cooldownEndsAt: number;
-  /** Last time state was updated */
+  messagesLeft: number;
+  lastMessageAt: number; // ms since epoch (0 = never)
+  createdAt: string;
   updatedAt: string;
 };
 
 export type RateLimitStatus = {
-  /** Whether the user can perform actions */
   allowed: boolean;
-  /** Reason if not allowed */
-  reason?: "message_limit" | "cooldown";
-  /** Remaining messages globally */
+  reason?: "message_limit";
   messagesRemaining: number;
-  /** Cooldown end time (ISO string) if in cooldown */
-  cooldownEndsAt?: string;
-  /** Seconds until cooldown ends */
-  cooldownSecondsRemaining?: number;
 };
 
-// ============================================================================
-// State Management
-// ============================================================================
-
-/**
- * Gets the current rate limit state from IndexedDB.
- */
-async function getState(): Promise<RateLimitState> {
-  const state = await chatDb.rateLimitState.get("singleton");
-
-  // Migration or Init
-  if (!state || typeof state.messageCount !== "number") {
-    const initial: RateLimitState = {
-      id: "singleton",
-      messageCount: 0,
-      cooldownEndsAt: state?.cooldownEndsAt || 0,
-      updatedAt: new Date().toISOString(),
-    };
-    await chatDb.rateLimitState.put(initial);
-    return initial;
-  }
-
-  return state;
+function nowIso() {
+  return new Date().toISOString();
 }
 
-/**
- * Updates the rate limit state in IndexedDB.
- */
-async function updateState(
-  updates: Partial<Omit<RateLimitState, "id">>,
-): Promise<RateLimitState> {
-  const current = await getState();
-  const updated: RateLimitState = {
-    ...current,
-    ...updates,
-    updatedAt: new Date().toISOString(),
+async function getOrInitRateLimit(): Promise<RateLimitRow> {
+  const existing = (await chatDb.rateLimit.get("singleton")) as
+    | RateLimitRow
+    | undefined;
+
+  if (existing) return existing;
+
+  const initial: RateLimitRow = {
+    id: "singleton",
+    messagesLeft: GLOBAL_MESSAGE_LIMIT,
+    lastMessageAt: 0,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
   };
-  await chatDb.rateLimitState.put(updated);
-  return updated;
+  await chatDb.rateLimit.put(initial);
+  return initial;
 }
 
-/**
- * Triggers a 12-hour cooldown.
- */
-async function triggerCooldown(): Promise<void> {
-  const cooldownEndsAt = Date.now() + COOLDOWN_DURATION_MS;
-  await updateState({ cooldownEndsAt });
-  console.log(
-    `⏳ Cooldown triggered until ${new Date(cooldownEndsAt).toISOString()}`,
-  );
-}
+async function maybeReset(
+  row: RateLimitRow,
+  now = Date.now(),
+): Promise<RateLimitRow> {
+  // Never sent a message => already fresh
+  if (row.lastMessageAt === 0) return row;
 
-// ============================================================================
-// Public API
-// ============================================================================
+  const inactiveForMs = now - row.lastMessageAt;
+  if (inactiveForMs < COOLDOWN_DURATION_MS) return row;
 
-/**
- * Checks if user is currently in cooldown.
- */
-export async function isInCooldown(): Promise<{
-  inCooldown: boolean;
-  endsAt?: string;
-  secondsRemaining?: number;
-}> {
-  const state = await getState();
-  const now = Date.now();
-
-  if (state.cooldownEndsAt > now) {
-    return {
-      inCooldown: true,
-      endsAt: new Date(state.cooldownEndsAt).toISOString(),
-      secondsRemaining: Math.ceil((state.cooldownEndsAt - now) / 1000),
-    };
-  }
-
-  // Cooldown expired - reset state if needed
-  if (state.cooldownEndsAt > 0) {
-    await updateState({
-      cooldownEndsAt: 0,
-      messageCount: 0,
-    });
-  }
-
-  return { inCooldown: false };
-}
-
-/**
- * Gets the current rate limit status.
- */
-export async function getRateLimitStatus(): Promise<RateLimitStatus> {
-  const cooldownCheck = await isInCooldown();
-
-  if (cooldownCheck.inCooldown) {
-    return {
-      allowed: false,
-      reason: "cooldown",
-      messagesRemaining: 0,
-      cooldownEndsAt: cooldownCheck.endsAt,
-      cooldownSecondsRemaining: cooldownCheck.secondsRemaining,
-    };
-  }
-
-  const state = await getState();
-  const messagesRemaining = Math.max(
-    0,
-    GLOBAL_MESSAGE_LIMIT - state.messageCount,
-  );
-
-  return {
-    allowed: true,
-    messagesRemaining,
+  // Inactivity window passed => full reset
+  // Keep lastMessageAt as the timestamp that completed the previous window.
+  // This prevents subsequent reads from immediately looking "fresh" (0) and
+  // helps debugging/telemetry while still allowing full usage again.
+  const reset: RateLimitRow = {
+    ...row,
+    messagesLeft: GLOBAL_MESSAGE_LIMIT,
+    lastMessageAt: row.lastMessageAt,
+    updatedAt: nowIso(),
   };
+  await chatDb.rateLimit.put(reset);
+  return reset;
 }
 
-/**
- * Checks if user can start a new conversation.
- * Always true unless in cooldown (limits are on messages now).
- */
-export async function canStartConversation(): Promise<{
-  allowed: boolean;
-  remaining: number; // For compatibility
-  reason?: "cooldown";
-}> {
-  const cooldownCheck = await isInCooldown();
-  if (cooldownCheck.inCooldown) {
-    return { allowed: false, remaining: 0, reason: "cooldown" };
-  }
-
-  return { allowed: true, remaining: 999 };
-}
-
-/**
- * Records a new message sent by the user.
- * Increments the global message counter.
- */
-export async function recordMessage(): Promise<{
-  messageCount: number;
-  remaining: number;
-}> {
-  const state = await getState();
-  const newCount = state.messageCount + 1;
-  await updateState({ messageCount: newCount });
-
-  console.log(`📊 Message recorded: ${newCount}/${GLOBAL_MESSAGE_LIMIT}`);
-
-  if (newCount >= GLOBAL_MESSAGE_LIMIT) {
-    await triggerCooldown();
-  }
-
-  return {
-    messageCount: newCount,
-    remaining: Math.max(0, GLOBAL_MESSAGE_LIMIT - newCount),
-  };
-}
-
-/**
- * Checks if user can send a message.
- * Checks global message limit.
- */
 export async function canSendMessage(): Promise<{
   allowed: boolean;
   remaining: number;
-  reason?: "message_limit" | "cooldown";
+  reason?: "message_limit";
 }> {
-  const cooldownCheck = await isInCooldown();
-  if (cooldownCheck.inCooldown) {
-    return { allowed: false, remaining: 0, reason: "cooldown" };
-  }
-
-  const state = await getState();
-  const remaining = Math.max(0, GLOBAL_MESSAGE_LIMIT - state.messageCount);
+  const now = Date.now();
+  const row = await maybeReset(await getOrInitRateLimit(), now);
+  const remaining = Math.max(0, row.messagesLeft);
 
   if (remaining <= 0) {
-    await triggerCooldown();
     return { allowed: false, remaining: 0, reason: "message_limit" };
   }
 
   return { allowed: true, remaining };
 }
 
-/**
- * Clears rate limit state (for testing/admin).
- */
-export async function clearRateLimitState(): Promise<void> {
-  await chatDb.rateLimitState.delete("singleton");
-  console.log("🗑️ Rate limit state cleared");
+export async function recordMessage(): Promise<{
+  messageCount: number;
+  remaining: number;
+}> {
+  const now = Date.now();
+  const row = await maybeReset(await getOrInitRateLimit(), now);
+
+  const nextLeft = Math.max(0, row.messagesLeft - 1);
+  const updated: RateLimitRow = {
+    ...row,
+    messagesLeft: nextLeft,
+    lastMessageAt: now,
+    updatedAt: nowIso(),
+  };
+  await chatDb.rateLimit.put(updated);
+
+  return {
+    messageCount: GLOBAL_MESSAGE_LIMIT - updated.messagesLeft,
+    remaining: updated.messagesLeft,
+  };
 }
 
-/**
- * Gets a UsageSnapshot compatible with existing UI components.
- */
+export async function clearRateLimitState(): Promise<void> {
+  await chatDb.rateLimit.delete("singleton");
+}
+
+export async function getRateLimitStatus(): Promise<RateLimitStatus> {
+  const now = Date.now();
+  const row = await maybeReset(await getOrInitRateLimit(), now);
+  return {
+    allowed: row.messagesLeft > 0,
+    reason: row.messagesLeft > 0 ? undefined : "message_limit",
+    messagesRemaining: row.messagesLeft,
+  };
+}
+
+export async function canStartConversation(): Promise<{
+  allowed: boolean;
+  remaining: number;
+}> {
+  // Starting chats is allowed; actual gating happens on message send.
+  return { allowed: true, remaining: 999 };
+}
+
+export async function isInCooldown(): Promise<{
+  inCooldown: boolean;
+  endsAt?: string;
+  secondsRemaining?: number;
+}> {
+  const now = Date.now();
+  const row = await getOrInitRateLimit();
+  if (row.messagesLeft > 0 || row.lastMessageAt === 0) {
+    return { inCooldown: false };
+  }
+
+  const endsAtMs = row.lastMessageAt + COOLDOWN_DURATION_MS;
+  if (endsAtMs <= now) {
+    await maybeReset(row, now);
+    return { inCooldown: false };
+  }
+
+  return {
+    inCooldown: true,
+    endsAt: new Date(endsAtMs).toISOString(),
+    secondsRemaining: Math.ceil((endsAtMs - now) / 1000),
+  };
+}
+
 export async function getClientUsageSnapshot(): Promise<{
   daily: {
     limit: number;
@@ -243,7 +166,6 @@ export async function getClientUsageSnapshot(): Promise<{
     secondsUntilReset: number | null;
   };
   chat: {
-    // Keeping structure but mapping to global limits
     limit: number;
     used: number;
     remaining: number;
@@ -251,29 +173,42 @@ export async function getClientUsageSnapshot(): Promise<{
     secondsUntilReset: number | null;
   };
 }> {
-  const cooldownCheck = await isInCooldown();
-  const state = await getState();
+  const now = Date.now();
+  const row = await maybeReset(await getOrInitRateLimit(), now);
 
-  const used = state.messageCount;
-  const remaining = cooldownCheck.inCooldown
-    ? 0
-    : Math.max(0, GLOBAL_MESSAGE_LIMIT - used);
+  const used = GLOBAL_MESSAGE_LIMIT - row.messagesLeft;
+  const remaining = row.messagesLeft;
+
+  let resetAt: string | null = null;
+  let secondsUntilReset: number | null = null;
+
+  if (row.messagesLeft <= 0 && row.lastMessageAt > 0) {
+    const endsAtMs = row.lastMessageAt + COOLDOWN_DURATION_MS;
+    if (endsAtMs > now) {
+      resetAt = new Date(endsAtMs).toISOString();
+      secondsUntilReset = Math.ceil((endsAtMs - now) / 1000);
+    } else {
+      // Safety: if time already elapsed, ensure stored state resets.
+      await maybeReset(row, now);
+    }
+  } else if (row.lastMessageAt > 0) {
+    // Even if not at limit, show when you'd be fully reset if you stop messaging
+    const endsAtMs = row.lastMessageAt + COOLDOWN_DURATION_MS;
+    if (endsAtMs > now) {
+      resetAt = new Date(endsAtMs).toISOString();
+      secondsUntilReset = Math.ceil((endsAtMs - now) / 1000);
+    } else {
+      await maybeReset(row, now);
+    }
+  }
 
   const snapshot = {
     limit: GLOBAL_MESSAGE_LIMIT,
     used,
     remaining,
-    resetAt: cooldownCheck.endsAt ?? null,
-    secondsUntilReset: cooldownCheck.secondsRemaining ?? null,
+    resetAt,
+    secondsUntilReset,
   };
 
-  // Map both daily and chat limits to the same global message limit
-  // so the UI reflects the single constraint everywhere
-  return {
-    daily: snapshot,
-    chat: {
-      ...snapshot,
-      resetAt: null, // Explicit null for chat specific structure if verified
-    },
-  };
+  return { daily: snapshot, chat: snapshot };
 }

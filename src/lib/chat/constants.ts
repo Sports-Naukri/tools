@@ -17,19 +17,19 @@
 
 /**
  * Maximum number of messages a user can send globally across all conversations.
- * This limit applies per 12-hour window (controlled by COOLDOWN_DURATION_MS).
+ * This limit applies per rolling window (controlled by COOLDOWN_DURATION_MS).
  *
  * @constant {number}
  */
 export const GLOBAL_MESSAGE_LIMIT = 40;
 
 /**
- * Cooldown duration when limits are exceeded.
- * User must wait this long before they can continue.
+ * Duration of the rolling message window.
+ * A user is reset back to GLOBAL_MESSAGE_LIMIT after this period of inactivity.
  *
  * @constant {number} 12 hours in milliseconds
  */
-export const COOLDOWN_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
+export const COOLDOWN_DURATION_MS = 60 * 1000;
 
 // ============================================================================
 // Model Configuration

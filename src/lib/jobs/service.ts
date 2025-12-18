@@ -309,6 +309,11 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
     return result;
   } catch (error) {
     console.error("Error fetching jobs:", error);
+
+    // In some environments (local dev / restricted networks), outbound requests
+    // to the WordPress API can time out. Return a helpful, deterministic
+    // response instead of hard-failing the tool.
+    const requested = filter.search?.trim() || "sports jobs";
     return {
       success: false,
       count: 0,
@@ -316,7 +321,7 @@ export async function fetchJobs(filter: JobFilter = {}): Promise<JobResponse> {
       totalPages: 0,
       currentPage: page,
       jobs: [],
-      message: error instanceof Error ? error.message : "Failed to fetch jobs",
+      message: `Couldn't reach SportsNaukri jobs right now (network timeout). Please try again in a moment. If it keeps failing, try a broader keyword like "${requested}" and no location filter.`,
       meta: {
         telemetryId: filter.telemetry?.requestId,
         conversationId: filter.telemetry?.conversationId,

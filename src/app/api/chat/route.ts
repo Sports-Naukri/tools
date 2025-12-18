@@ -71,6 +71,7 @@ import {
   jobSearchSchema,
 } from "@/lib/jobs/tools";
 import type { JobResponse } from "@/lib/jobs/types";
+import { RESUME_TOOL_NAME } from "@/lib/resume/tool";
 import {
   SKILL_MAPPER_TOOL_NAME,
   type SkillMapperInput,
@@ -127,183 +128,10 @@ const followupToolInputSchema = z.object({
 const getEnabledModel = (modelId: string) =>
   CHAT_MODELS.find((model) => model.id === modelId && model.isEnabled);
 
-// ============================================================================
-// Zero-LLM Job Search Bypass
-// ============================================================================
-// Detects simple job search queries and returns results directly without AI
-
-/** Patterns that indicate a job search query */
-const JOB_SEARCH_PATTERNS = [
-  /\b(find|search|show|get|list|look for|looking for)\s+(me\s+)?(jobs?|openings?|vacancies|positions?|opportunities)/i,
-  /\b(jobs?|openings?|vacancies|positions?)\s+(for|in|at|near)\b/i,
-  /\b(hiring|who('s| is) hiring)\b/i,
-  /\bjob\s+(search|hunt|hunting)\b/i,
-  /\bcareer\s+(opportunities|openings)\b/i,
-];
-
-/** Check if message is a simple job search that can bypass LLM */
-function detectJobSearchIntent(message: string): {
-  isJobSearch: boolean;
-  searchQuery: string;
-  location?: string;
-} {
-  const normalized = message.toLowerCase().trim();
-
-  // Check if it matches job search patterns
-  const isJobSearch = JOB_SEARCH_PATTERNS.some((pattern) =>
-    pattern.test(normalized),
-  );
-  if (!isJobSearch) {
-    return { isJobSearch: false, searchQuery: "" };
-  }
-
-  // Extract the job type/role being searched
-  // Common patterns: "find me [role] jobs", "jobs for [role]", "[role] openings"
-  let searchQuery = "";
-
-  // Try to extract role: "find X jobs", "X jobs", "jobs for X"
-  const rolePatterns = [
-    /(?:find|search|show|get|list|look(?:ing)? for)\s+(?:me\s+)?(.+?)\s+(?:jobs?|openings?|positions?|vacancies)/i,
-    /(.+?)\s+(?:jobs?|openings?|positions?|vacancies)\s+(?:for|in|at|near)/i,
-    /(?:jobs?|openings?|positions?|vacancies)\s+(?:for|as|in)\s+(.+?)(?:\s+in\s+|$)/i,
-    /(.+?)\s+(?:jobs?|openings?|positions?)$/i,
-  ];
-
-  for (const pattern of rolePatterns) {
-    const match = normalized.match(pattern);
-    if (match?.[1]) {
-      searchQuery = match[1].trim();
-      // Remove common filler words
-      searchQuery = searchQuery.replace(/^(a|an|the|some|any)\s+/i, "");
-      break;
-    }
-  }
-
-  // If no specific query extracted, use the full message as search
-  if (!searchQuery) {
-    searchQuery = normalized
-      .replace(
-        /\b(find|search|show|get|list|look for|looking for|me|jobs?|openings?|vacancies|positions?|opportunities)\b/gi,
-        "",
-      )
-      .trim();
-  }
-
-  // Extract location if mentioned: "in [location]", "at [location]", "near [location]"
-  let location: string | undefined;
-  const locationMatch = normalized.match(
-    /(?:in|at|near)\s+([a-z\s]+?)(?:\s|$)/i,
-  );
-  if (locationMatch?.[1]) {
-    const possibleLocation = locationMatch[1].trim();
-    // Basic check - if it looks like a city name (not a role)
-    const cities = [
-      "mumbai",
-      "delhi",
-      "bangalore",
-      "bengaluru",
-      "chennai",
-      "kolkata",
-      "hyderabad",
-      "pune",
-      "jaipur",
-      "remote",
-      "india",
-    ];
-    if (cities.some((city) => possibleLocation.includes(city))) {
-      location = possibleLocation;
-    }
-  }
-
-  return { isJobSearch: true, searchQuery: searchQuery || "sports", location };
-}
-
-/** Create a streaming response for job search bypass (no LLM) */
-async function createJobSearchBypassResponse(
-  searchQuery: string,
-  location: string | undefined,
-  conversationId: string,
-): Promise<Response> {
-  console.log(
-    `⚡ [BYPASS] Direct job search: "${searchQuery}" | Location: ${location || "any"}`,
-  );
-
-  // Fetch jobs directly
-  const requestId = crypto.randomUUID();
-  const results = await fetchJobs({
-    search: searchQuery,
-    location,
-    limit: 10,
-    telemetry: {
-      conversationId,
-      requestId,
-      requestedAt: new Date().toISOString(),
-    },
-  });
-
-  // Create minimal job data (strip descriptions)
-  const minimalJobs = (results.jobs ?? []).map((job) => ({
-    ...job,
-    description: "",
-    qualification: "",
-    experience: "",
-  }));
-
-  const jobCount = minimalJobs.length;
-  console.log(`⚡ [BYPASS] Found ${jobCount} jobs (0 LLM tokens used)`);
-
-  // Create a manual streaming response that mimics AI SDK format
-  // Using the AI SDK's data stream protocol
-  const toolCallId = `call_${requestId.slice(0, 8)}`;
-
-  // Build the response chunks
-  const chunks: string[] = [];
-
-  // Tool call
-  chunks.push(
-    `9:{"toolCallId":"${toolCallId}","toolName":"${JOB_SEARCH_TOOL_NAME}","args":${JSON.stringify({ search: searchQuery, location })}}\n`,
-  );
-
-  // Tool result
-  const toolResult = {
-    success: true,
-    count: jobCount,
-    total: results.total,
-    totalPages: results.totalPages,
-    currentPage: results.currentPage,
-    jobs: minimalJobs,
-    meta: {
-      telemetryId: requestId,
-      searchKeywords: [searchQuery],
-      bypass: true, // Flag for client to know this was a bypass
-    },
-  };
-  chunks.push(
-    `a:{"toolCallId":"${toolCallId}","result":${JSON.stringify(toolResult)}}\n`,
-  );
-
-  // Assistant text (minimal)
-  const responseText =
-    jobCount > 0
-      ? `I found ${jobCount} ${searchQuery} job${jobCount !== 1 ? "s" : ""} for you:`
-      : `No ${searchQuery} jobs found. Try a different search term.`;
-  chunks.push(`0:"${responseText.replace(/"/g, '\\"')}"\n`);
-
-  // Finish reason
-  chunks.push(
-    `d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`,
-  );
-
-  // Return as SSE stream
-  const responseBody = chunks.join("");
-
-  return new Response(responseBody, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "X-Vercel-AI-Data-Stream": "v1",
-    },
-  });
-}
+// NOTE: The previous "zero-LLM job search bypass" was removed.
+// It produced assistant messages with empty `parts` in some client environments,
+// which triggered false "AI couldn't generate a response" + Retry loops.
+// Job search is now handled purely via the `searchJobs` tool within the normal AI stream.
 
 export async function POST(req: Request) {
   try {
@@ -312,27 +140,6 @@ export async function POST(req: Request) {
     );
     const json = await req.json();
     const payload = chatRequestSchema.parse(json);
-
-    // ========================================================================
-    // Zero-LLM Job Search Bypass
-    // ========================================================================
-    // Check if this is a simple job search query that doesn't need AI
-    const lastMessage = payload.messages[payload.messages.length - 1];
-    const lastMessageText =
-      typeof lastMessage?.content === "string" ? lastMessage.content : "";
-
-    if (lastMessage?.role === "user" && lastMessageText) {
-      const jobSearchIntent = detectJobSearchIntent(lastMessageText);
-      if (jobSearchIntent.isJobSearch) {
-        // Bypass LLM entirely - fetch jobs and return directly
-        return createJobSearchBypassResponse(
-          jobSearchIntent.searchQuery,
-          jobSearchIntent.location,
-          payload.conversationId,
-        );
-      }
-    }
-    // ========================================================================
 
     const selectedModel = getEnabledModel(payload.modelId);
     if (!selectedModel) {
@@ -419,6 +226,49 @@ ${modeInstruction}
       maxRetries: 2, // Retry on transient errors like rate limits
       stopWhen: [stepCountIs(5)], // v5 multi-step loop control
       tools: {
+        [RESUME_TOOL_NAME]: tool<
+          { purpose?: string },
+          {
+            hasResume: boolean;
+            contextEnabled: boolean;
+            resumeContext: ChatRequestPayload["resumeContext"] | null;
+            message: string;
+          }
+        >({
+          description:
+            "Get the user's resume/profile context (if available). If missing, instruct the user to upload their resume via the UI.",
+          inputSchema: z.object({
+            purpose: z
+              .string()
+              .optional()
+              .describe(
+                "Why you need the resume (helps explain what the user should upload it for).",
+              ),
+          }),
+          async execute(input) {
+            const purposeSuffix = input?.purpose
+              ? ` (needed for: ${input.purpose})`
+              : "";
+
+            // Resume context comes from the browser and is attached to the request.
+            // The server cannot read IndexedDB directly.
+            if (!payload.resumeContext) {
+              return {
+                hasResume: false,
+                contextEnabled: false,
+                resumeContext: null,
+                message: `No resume is available${purposeSuffix}. Ask the user to upload their resume (PDF/DOCX) using the Upload Resume button.`,
+              };
+            }
+
+            return {
+              hasResume: true,
+              contextEnabled: true,
+              resumeContext: payload.resumeContext,
+              message: "Resume context is available.",
+            };
+          },
+        }),
         [DOCUMENT_TOOL_NAME]: tool<DocumentInput, GeneratedDocument>({
           description:
             "Create a structured document (resume, cover letter, short report, or essay) that will be shown inside the canvas artifact.",
@@ -696,7 +546,11 @@ SCOPE:
 
 CAPABILITIES:
 - Use ${JOB_SEARCH_TOOL_NAME} when users ask about jobs, vacancies, or opportunities. Show at least 3 jobs when possible; if fewer exist, suggest broader keywords.
+- When users ask for "requirements" (qualification/experience) for roles on SportsNaukri, FIRST use ${JOB_SEARCH_TOOL_NAME} to fetch real listings, then summarize common requirements from the returned jobs (qualification, experience, jobType, location).
 - Use ${DOCUMENT_TOOL_NAME} for resumes, cover letters, or career documents. Always include a descriptive 'summary' field that explains what you created (e.g., "Created a resume highlighting your 5 years of sports marketing experience").
+- If you need the user's resume/profile to answer (resume writing, ATS tailoring, personalized suggestions, skill gap diagnosis), call the getResume tool first.
+  - If getResume returns hasResume=false, ask the user to upload their resume (PDF/DOCX) using the UI's Upload Resume button.
+  - If getResume returns hasResume=true but contextEnabled=false, tell the user to turn "Resume On" in the chat bar.
 - Call ${FOLLOWUP_TOOL_NAME} at the END of every response (unless you used ${DOCUMENT_TOOL_NAME}). Provide exactly 2 relevant follow-up questions.
 
 AGENT SWITCHING:
@@ -757,7 +611,11 @@ After using any tool, you MUST write a detailed text response interpreting and p
 CAPABILITIES:
 - Use ${SKILL_MAPPER_TOOL_NAME} when users share their skills to get role mappings, training, and keywords
 - After getting skill_mapper results, ALWAYS write a formatted response with the career mapping information
+- If you need the user's resume/profile to answer (skill inventory, gap analysis, role fit, keyword extraction), call the getResume tool first.
+  - If getResume returns hasResume=false, ask the user to upload their resume (PDF/DOCX) using the UI's Upload Resume button.
+  - If getResume returns hasResume=true but contextEnabled=false, tell the user to turn "Resume On" in the chat bar.
 - Use ${JOB_SEARCH_TOOL_NAME} to show real job examples matching user's skill profile. DO NOT list the jobs in text; just say "Here are relevant jobs:" and let the UI show the cards.
+- When the user asks for "requirements" for a target role, use ${JOB_SEARCH_TOOL_NAME} to fetch examples and synthesize common requirements from those listings.
 - Use ${DOCUMENT_TOOL_NAME} for career plans or skill summaries
 - Call ${FOLLOWUP_TOOL_NAME} at the END of every response with relevant next steps
 
@@ -912,7 +770,16 @@ function getTextFromParts(parts: UIPart[]): string {
     .trim();
 }
 
-const ALLOWED_PART_TYPES = new Set(["text", "output_text", "file"]);
+// Parts we allow to flow through from the client.
+// IMPORTANT: include tool-* parts so the client can round-trip document/job tool outputs.
+// If we drop these, Canvas (documents) and JobCards can stop working on reload / follow-ups.
+const ALLOWED_PART_TYPES = new Set([
+  "text",
+  "output_text",
+  "file",
+  `tool-${DOCUMENT_TOOL_NAME}`,
+  `tool-${JOB_SEARCH_TOOL_NAME}`,
+]);
 const DOCUMENT_PART_TYPE = `tool-${DOCUMENT_TOOL_NAME}`;
 const JOB_SEARCH_PART_TYPE = `tool-${JOB_SEARCH_TOOL_NAME}`;
 

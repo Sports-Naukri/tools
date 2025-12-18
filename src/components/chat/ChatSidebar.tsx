@@ -33,7 +33,6 @@ import {
 
 import type { StoredConversation } from "@/lib/chat/storage";
 import type { UsageSnapshot } from "@/lib/chat/types";
-import { formatDurationShort } from "@/lib/time";
 import { ResumeSection } from "./ResumeSection";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "sn-chat-sidebar-width";
@@ -114,16 +113,72 @@ export function ChatSidebar({
   const visibleConversations = filteredConversations;
 
   const isDailyLimitReached = usage ? usage.daily.remaining <= 0 : false;
+
+  // Live countdown for the 12-hour reset window
+  const [dailyResetSeconds, setDailyResetSeconds] = useState(
+    usage?.daily.secondsUntilReset ?? null,
+  );
+
+  useEffect(() => {
+    setDailyResetSeconds(usage?.daily.secondsUntilReset ?? null);
+  }, [usage?.daily.secondsUntilReset]);
+
+  useEffect(() => {
+    if (dailyResetSeconds === null || dailyResetSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setDailyResetSeconds((prev: number | null) =>
+        prev !== null && prev > 0 ? prev - 1 : prev,
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [dailyResetSeconds]);
+
+  // When the local countdown hits zero, force-refresh usage from IndexedDB so
+  // the UI reflects the reset without requiring a page reload.
+  useEffect(() => {
+    if (!usage) return;
+    if (dailyResetSeconds !== 0) return;
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const { getClientUsageSnapshot } = await import(
+          "@/lib/chat/clientRateLimiter"
+        );
+        const fresh = await getClientUsageSnapshot();
+        if (cancelled) return;
+        setDailyResetSeconds(fresh.daily.secondsUntilReset ?? null);
+      } catch {
+        // ignore – UI will update on the next normal usage refresh
+      }
+    };
+
+    void refresh();
+    return () => {
+      cancelled = true;
+    };
+  }, [dailyResetSeconds, usage]);
+
+  const formatCountdown = useCallback(
+    (seconds: number | null): string | null => {
+      if (seconds === null || seconds <= 0) return null;
+      const hrs = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      return `${hrs.toString().padStart(2, "0")}:${mins
+        .toString()
+        .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    },
+    [],
+  );
+
   const dailyResetLabel = useMemo(() => {
-    if (!usage) {
-      return "Resets at midnight";
+    const formatted = formatCountdown(dailyResetSeconds);
+    if (formatted) {
+      return `Resets in ${formatted}`;
     }
-    if (usage.daily.remaining === 0) {
-      const countdown = formatDurationShort(usage.daily.secondsUntilReset);
-      return countdown ? `Next reset in ${countdown}` : "Waiting for reset";
-    }
-    return "Resets at midnight";
-  }, [usage]);
+    return "";
+  }, [dailyResetSeconds, formatCountdown]);
 
   const handleResizeStart = useCallback(
     (event: React.MouseEvent) => {

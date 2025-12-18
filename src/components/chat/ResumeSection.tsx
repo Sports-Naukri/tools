@@ -200,7 +200,7 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
 
           {uploadState === "error" && errorMessage && (
             <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded">
-              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}

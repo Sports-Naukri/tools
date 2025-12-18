@@ -150,7 +150,10 @@ jobs:
           fi
       - name: Install Gitleaks (OSS)
         run: |
-          curl -sSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | bash
+          VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
+          ARCHIVE="gitleaks_${VERSION#v}_linux_x64.tar.gz"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/${VERSION}/${ARCHIVE}" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
           sudo mv gitleaks /usr/local/bin/gitleaks
       - name: Secret scan (Gitleaks CLI)
         run: gitleaks detect --source=. --no-git --verbose

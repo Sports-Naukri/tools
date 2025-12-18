@@ -16,7 +16,7 @@ export function FeatureGrid() {
           transition={{ duration: 0.5 }}
           className="group relative flex flex-col justify-end overflow-hidden rounded-3xl bg-black p-8 md:col-span-2 md:row-span-2"
         >
-          <div className="absolute inset-0 bg-[url('/sportsnaukriai.png')] bg-cover bg-center opacity-80 transition-transform duration-700 group-hover:scale-105" />
+          <div className="absolute inset-0 bg-[url('/sportsnaukriai.jpg')] bg-cover bg-center opacity-80 transition-transform duration-700 group-hover:scale-105" />
           <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/50 to-transparent" />
 
           <div className="relative z-10 max-w-lg">
@@ -50,7 +50,7 @@ export function FeatureGrid() {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="group relative flex flex-col justify-end overflow-hidden rounded-3xl bg-black p-8 transition-colors md:col-span-1 md:row-span-1"
         >
-          <div className="absolute inset-0 bg-[url('/jay.png')] bg-cover bg-center opacity-80 transition-transform duration-700 group-hover:scale-105" />
+          <div className="absolute inset-0 bg-[url('/jay.jpg')] bg-cover bg-center opacity-80 transition-transform duration-700 group-hover:scale-105" />
           <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
 
           <div className="relative z-10">
@@ -70,7 +70,7 @@ export function FeatureGrid() {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="group relative flex flex-col justify-end overflow-hidden rounded-3xl bg-black p-8 md:col-span-1 md:row-span-1"
         >
-          <div className="absolute inset-0 bg-[url('/navigator.png')] bg-cover bg-center opacity-80 transition-transform duration-700 group-hover:scale-105" />
+          <div className="absolute inset-0 bg-[url('/navigator.jpg')] bg-cover bg-center opacity-80 transition-transform duration-700 group-hover:scale-105" />
           <div className="absolute inset-0 bg-linear-to-t from-black/90 via-black/40 to-transparent" />
 
           <div className="relative z-10">

@@ -17,6 +17,7 @@
 import clsx from "clsx";
 import { FileCheck, FileUp, FileX, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { isSupportedResumeFile, parseResumeFile } from "@/lib/resume/parser";
 import {
@@ -36,11 +37,23 @@ interface ResumeToggleProps {
   onToggleChange?: (enabled: boolean) => void;
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return isMobile;
+}
+
 export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
   const [buttonState, setButtonState] = useState<ButtonState>("no-profile");
   const [contextEnabled, setContextEnabledState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
 
   // Check for profile on mount and periodically
   useEffect(() => {
@@ -77,16 +90,26 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
       const allowed = await canUpload();
       if (!allowed) {
         setError("Limit reached (3/day)");
+        toast.error("Upload limit reached", {
+          description:
+            "You can upload up to 3 resumes per day. Try again tomorrow.",
+          duration: 4000,
+        });
         return;
       }
 
       // Validate file
       if (!isSupportedResumeFile(file)) {
         setError("PDF or DOCX only");
+        toast.error("Invalid file type", {
+          description: "Please upload a PDF or DOCX file.",
+          duration: 3000,
+        });
         return;
       }
 
-      try {
+      // Show upload started toast with promise
+      const uploadPromise = (async () => {
         // Parse file - broadcast state for sidebar
         setButtonState("uploading");
         setUploadState("parsing");
@@ -118,6 +141,21 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
 
         // Reset upload state after brief success display
         setTimeout(() => setUploadState("idle"), 2000);
+
+        return data.profile;
+      })();
+
+      toast.promise(uploadPromise, {
+        loading: "Analyzing your resume...",
+        success: (profile) =>
+          profile?.name
+            ? `Welcome, ${profile.name}! Your profile is ready.`
+            : "Resume uploaded successfully!",
+        error: "Failed to process resume. Please try again.",
+      });
+
+      try {
+        await uploadPromise;
       } catch (err) {
         console.error("Resume upload error:", err);
         setError("Upload failed");
@@ -156,7 +194,8 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
           type="button"
           onClick={handleToggle}
           className={clsx(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-300",
+            "flex items-center gap-1.5 rounded-lg text-xs font-medium transition-all duration-300",
+            isMobile ? "p-2" : "px-3 py-1.5",
             contextEnabled
               ? "bg-violet-100 text-violet-700 hover:bg-violet-200 shadow-sm shadow-violet-200/50"
               : "bg-slate-100 text-slate-500 hover:bg-slate-200",
@@ -170,12 +209,12 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
           {contextEnabled ? (
             <>
               <FileCheck className="h-3.5 w-3.5" />
-              <span>Resume On</span>
+              {!isMobile && <span>Resume On</span>}
             </>
           ) : (
             <>
               <FileX className="h-3.5 w-3.5" />
-              <span>Resume Off</span>
+              {!isMobile && <span>Resume Off</span>}
             </>
           )}
         </button>
@@ -186,7 +225,8 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
           onClick={handleUploadClick}
           disabled={isLoading}
           className={clsx(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+            "flex items-center gap-1.5 rounded-lg text-xs font-medium transition-all",
+            isMobile ? "p-2" : "px-3 py-1.5",
             isLoading
               ? "bg-slate-100 text-slate-400 cursor-wait"
               : error
@@ -198,22 +238,22 @@ export function ResumeToggle({ onToggleChange }: ResumeToggleProps) {
           {buttonState === "uploading" ? (
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>Parsing...</span>
+              {!isMobile && <span>Parsing...</span>}
             </>
           ) : buttonState === "extracting" ? (
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>Extracting...</span>
+              {!isMobile && <span>Extracting...</span>}
             </>
           ) : error ? (
             <>
               <FileX className="h-3.5 w-3.5" />
-              <span>{error}</span>
+              {!isMobile && <span>{error}</span>}
             </>
           ) : (
             <>
               <FileUp className="h-3.5 w-3.5" />
-              <span>Upload Resume</span>
+              {!isMobile && <span>Upload Resume</span>}
             </>
           )}
         </button>

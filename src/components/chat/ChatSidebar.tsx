@@ -223,10 +223,11 @@ export function ChatSidebar({
         isMobile && "shadow-2xl",
       )}
     >
-      <div className="p-4 pb-2">
+      <div className={clsx("pb-2", isMobile ? "p-3" : "p-4")}>
         <div
           className={clsx(
-            "flex items-center mb-6",
+            "flex items-center",
+            isMobile ? "mb-4" : "mb-6",
             isCollapsed ? "justify-center" : "justify-between px-2",
           )}
         >
@@ -335,14 +336,22 @@ export function ChatSidebar({
         </button>
 
         {!isCollapsed && (
-          <div className="relative mt-4">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <div className={clsx("relative", isMobile ? "mt-3" : "mt-4")}>
+            <Search
+              className={clsx(
+                "absolute left-3 top-1/2 -translate-y-1/2 text-slate-400",
+                isMobile ? "h-3.5 w-3.5" : "h-4 w-4",
+              )}
+            />
             <input
               type="text"
               placeholder="Search your threads..."
               value={searchQuery}
               onChange={handleSearchChange}
-              className="w-full rounded-lg border-none bg-transparent py-2 pl-9 pr-4 text-sm text-slate-600 placeholder:text-slate-400 focus:ring-0"
+              className={clsx(
+                "w-full rounded-lg border-none bg-transparent pr-4 text-slate-600 placeholder:text-slate-400 focus:ring-0",
+                isMobile ? "py-1.5 pl-8 text-xs" : "py-2 pl-9 text-sm",
+              )}
             />
           </div>
         )}

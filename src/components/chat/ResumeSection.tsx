@@ -25,6 +25,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { isSupportedResumeFile, parseResumeFile } from "@/lib/resume/parser";
 import {
@@ -98,6 +99,11 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
       if (!allowed) {
         setErrorMessage("Upload limit reached (3/day). Try again tomorrow.");
         setUploadState("error");
+        toast.error("Upload limit reached", {
+          description:
+            "You can upload up to 3 resumes per day. Try again tomorrow.",
+          duration: 4000,
+        });
         return;
       }
 
@@ -105,10 +111,15 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
       if (!isSupportedResumeFile(file)) {
         setErrorMessage("Please upload a PDF or DOCX file");
         setUploadState("error");
+        toast.error("Invalid file type", {
+          description: "Please upload a PDF or DOCX file.",
+          duration: 3000,
+        });
         return;
       }
 
-      try {
+      // Show upload toast with promise
+      const uploadPromise = (async () => {
         // Step 1: Parse file
         setUploadState("parsing");
         setErrorMessage(null);
@@ -141,6 +152,21 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
 
         // Reset to idle after showing success
         setTimeout(() => setUploadState("idle"), 2000);
+
+        return data.profile;
+      })();
+
+      toast.promise(uploadPromise, {
+        loading: "Analyzing your resume...",
+        success: (profile) =>
+          profile?.name
+            ? `Welcome, ${profile.name}! Your profile is ready.`
+            : "Resume uploaded successfully!",
+        error: "Failed to process resume. Please try again.",
+      });
+
+      try {
+        await uploadPromise;
       } catch (error) {
         console.error("Resume upload error:", error);
         setErrorMessage(
@@ -157,6 +183,7 @@ export function ResumeSection({ isCollapsed }: ResumeSectionProps) {
     setProfile(null);
     setUploadState("idle");
     setErrorMessage(null);
+    toast.success("Resume profile removed");
   }, []);
 
   // Collapsed view - just show icon

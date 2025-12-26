@@ -21,6 +21,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  Info,
   Loader2,
   Lock,
   X,
@@ -29,7 +30,6 @@ import {
   type ChangeEventHandler,
   type FormEventHandler,
   type KeyboardEvent,
-  useEffect,
   useRef,
   useState,
 } from "react";
@@ -76,6 +76,89 @@ type ChatComposerProps = {
 const MAX_INPUT_LENGTH = 4000;
 
 /**
+ * Mode button with tooltip for Jay/Navigator toggle
+ */
+function ModeButton({
+  mode,
+  currentMode,
+  onClick,
+  label,
+  tooltip,
+  dotColor,
+}: {
+  mode: ChatMode;
+  currentMode: ChatMode;
+  onClick: () => void;
+  label: string;
+  tooltip: string;
+  dotColor: "yellow" | "red";
+}) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const isActive = mode === currentMode;
+
+  const dotColorClass =
+    dotColor === "yellow"
+      ? isActive
+        ? "bg-yellow-500"
+        : "bg-slate-400"
+      : isActive
+        ? "bg-red-500"
+        : "bg-slate-400";
+
+  const textColorClass =
+    dotColor === "yellow"
+      ? isActive
+        ? "text-yellow-600"
+        : "text-slate-500 hover:text-slate-700"
+      : isActive
+        ? "text-red-600"
+        : "text-slate-500 hover:text-slate-700";
+
+  return (
+    <div className="relative inline-flex items-center rounded-md bg-white/90 px-2 py-1 shadow-sm ring-1 ring-black/5">
+      <button
+        type="button"
+        onClick={onClick}
+        className={clsx(
+          "flex items-center gap-1 text-[11px] font-medium tracking-tight transition-colors",
+          textColorClass,
+        )}
+      >
+        <div
+          className={clsx("h-1.5 w-1.5 rounded-full shrink-0", dotColorClass)}
+        />
+        <span className="whitespace-nowrap">{label}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setShowTooltip((v) => !v)}
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        className="ml-1 shrink-0 rounded-full p-0.5 text-slate-400 hover:text-slate-600 transition-colors"
+        aria-label={`Info about ${label}`}
+      >
+        <Info className="h-3 w-3" />
+      </button>
+
+      {showTooltip && (
+        <div
+          className="fixed left-4 right-4 mx-auto max-w-50 top-auto bottom-auto z-100 p-2 text-[10px] leading-relaxed text-slate-600 bg-white rounded-lg shadow-lg border border-slate-200"
+          style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+          }}
+        >
+          <div className="font-medium text-slate-800 mb-1">{label}</div>
+          {tooltip}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Component for composing and sending chat messages.
  * Supports text input, file attachments, and model selection.
  */
@@ -119,64 +202,6 @@ export function ChatComposer({
     ? formatDurationShort(activeLimitWindow.secondsUntilReset)
     : null;
 
-  // Live countdown timer for daily reset (midnight)
-  const [dailyResetSeconds, setDailyResetSeconds] = useState(
-    usage?.daily.secondsUntilReset ?? null,
-  );
-
-  // Sync from usage when it changes
-  useEffect(() => {
-    setDailyResetSeconds(usage?.daily.secondsUntilReset ?? null);
-  }, [usage?.daily.secondsUntilReset]);
-
-  // Tick down every second
-  useEffect(() => {
-    if (dailyResetSeconds === null || dailyResetSeconds <= 0) return;
-    const timer = setInterval(() => {
-      setDailyResetSeconds((prev: number | null) =>
-        prev !== null && prev > 0 ? prev - 1 : prev,
-      );
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [dailyResetSeconds]);
-
-  // When the local countdown hits zero, refresh the persisted limiter state so
-  // the user sees the reset without needing a manual page refresh.
-  useEffect(() => {
-    if (!usage) return;
-    if (dailyResetSeconds !== 0) return;
-
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const { getClientUsageSnapshot } = await import(
-          "@/lib/chat/clientRateLimiter"
-        );
-        const fresh = await getClientUsageSnapshot();
-        if (cancelled) return;
-        setDailyResetSeconds(fresh.daily.secondsUntilReset ?? null);
-      } catch {
-        // ignore – UI will update on the next normal usage refresh
-      }
-    };
-
-    void refresh();
-    return () => {
-      cancelled = true;
-    };
-  }, [dailyResetSeconds, usage]);
-
-  // Format seconds as HH:MM:SS
-  const formatCountdown = (seconds: number | null): string | null => {
-    if (seconds === null || seconds <= 0) return null;
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const dailyResetCountdown = formatCountdown(dailyResetSeconds);
-
   // Handle Enter key to submit, Shift+Enter for new line
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -214,7 +239,7 @@ export function ChatComposer({
     : "0 0 20px rgba(234, 179, 8, 0.2), 0 0 40px rgba(234, 179, 8, 0.1)"; // yellow aura - lower opacity
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4 pb-4">
+    <div className="w-full max-w-3xl mx-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-x-hidden">
       {/* Chrome-style tabs container with form */}
       <form
         onSubmit={onSubmit}
@@ -265,42 +290,22 @@ export function ChatComposer({
         {/* Embedded Mode Toggle - Negative Elevation */}
         {onModeChange && (
           <div className="absolute top-3 left-3 z-10 p-1 bg-slate-100/80 rounded-lg flex items-center gap-1 shadow-[inset_0_1px_3px_rgba(0,0,0,0.06)]">
-            <button
-              type="button"
+            <ModeButton
+              mode="jay"
+              currentMode={mode}
               onClick={() => onModeChange("jay")}
-              className={clsx(
-                "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-all rounded-md tracking-tight",
-                mode === "jay"
-                  ? "bg-white text-yellow-600 shadow-sm ring-1 ring-black/5"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50",
-              )}
-            >
-              <div
-                className={clsx(
-                  "h-1.5 w-1.5 rounded-full",
-                  mode === "jay" ? "bg-yellow-500" : "bg-slate-400",
-                )}
-              />
-              <span>Jay</span>
-            </button>
-            <button
-              type="button"
+              label="Jay"
+              tooltip="Creative AI assistant for resumes, cover letters & documents"
+              dotColor="yellow"
+            />
+            <ModeButton
+              mode="navigator"
+              currentMode={mode}
               onClick={() => onModeChange("navigator")}
-              className={clsx(
-                "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-all rounded-md tracking-tight",
-                mode === "navigator"
-                  ? "bg-white text-red-600 shadow-sm ring-1 ring-black/5"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50",
-              )}
-            >
-              <div
-                className={clsx(
-                  "h-1.5 w-1.5 rounded-full",
-                  mode === "navigator" ? "bg-red-500" : "bg-slate-400",
-                )}
-              />
-              <span>Navigator</span>
-            </button>
+              label="Navigator"
+              tooltip="Job search expert - finds relevant sports industry opportunities"
+              dotColor="red"
+            />
           </div>
         )}
 
@@ -560,27 +565,10 @@ export function ChatComposer({
         <p className="mt-2 text-center text-xs text-red-500">{primaryError}</p>
       )}
 
-      <div className="mt-2 flex items-center justify-between px-1 text-xs text-slate-400">
-        <span>AI can make mistakes. Please double check responses.</span>
-        {usage && (
-          <span
-            className={clsx(
-              "font-medium flex items-center gap-1.5",
-              usage.chat.remaining === 0
-                ? "text-red-500"
-                : usage.chat.remaining < 3
-                  ? "text-amber-500"
-                  : "text-slate-400",
-            )}
-          >
-            {usage.chat.remaining} messages left
-            {dailyResetCountdown && (
-              <span className="text-[10px] text-slate-400 font-normal tabular-nums">
-                ({dailyResetCountdown})
-              </span>
-            )}
-          </span>
-        )}
+      <div className="mt-2 px-1 text-center">
+        <span className="text-[11px] text-slate-400">
+          AI can make mistakes. Please double check responses.
+        </span>
       </div>
     </div>
   );

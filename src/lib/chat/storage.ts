@@ -260,6 +260,46 @@ class ChatDatabase extends Dexie {
 /** Singleton database instance */
 export const chatDb = new ChatDatabase();
 
+// ============================================================================
+// In-Memory Cache for Performance
+// ============================================================================
+
+/** Cache for conversations to reduce IndexedDB reads */
+const conversationCache = new Map<string, StoredConversation>();
+/** Cache for messages by conversation ID */
+const messageCache = new Map<string, StoredMessage[]>();
+/** Cache TTL in milliseconds (30 seconds) */
+const CACHE_TTL = 30_000;
+/** Track cache timestamps */
+const cacheTimestamps = new Map<string, number>();
+
+/** Check if cache entry is still valid */
+function isCacheValid(key: string): boolean {
+  const timestamp = cacheTimestamps.get(key);
+  if (!timestamp) return false;
+  return Date.now() - timestamp < CACHE_TTL;
+}
+
+/** Set cache with timestamp */
+function setCache<T>(cache: Map<string, T>, key: string, value: T): void {
+  cache.set(key, value);
+  cacheTimestamps.set(key, Date.now());
+}
+
+/** Invalidate conversation cache */
+function invalidateConversationCache(conversationId?: string): void {
+  if (conversationId) {
+    conversationCache.delete(conversationId);
+    messageCache.delete(conversationId);
+    cacheTimestamps.delete(`conv:${conversationId}`);
+    cacheTimestamps.delete(`msg:${conversationId}`);
+  } else {
+    conversationCache.clear();
+    messageCache.clear();
+    cacheTimestamps.clear();
+  }
+}
+
 /**
  * Generate a UUID v4 identifier.
  * Used for all new conversations and messages.
@@ -281,6 +321,7 @@ export function generateId(): string {
  */
 export async function createConversation(conversation: StoredConversation) {
   await chatDb.conversations.add(conversation);
+  setCache(conversationCache, conversation.id, conversation);
   return conversation;
 }
 
@@ -293,17 +334,29 @@ export async function createConversation(conversation: StoredConversation) {
  */
 export async function upsertConversation(conversation: StoredConversation) {
   await chatDb.conversations.put(conversation);
+  setCache(conversationCache, conversation.id, conversation);
   return conversation;
 }
 
 /**
  * Retrieves a conversation by its ID.
+ * Uses in-memory cache for better performance.
  *
  * @param conversationId - The conversation ID to look up
  * @returns The conversation or undefined if not found
  */
 export async function getConversation(conversationId: string) {
-  return chatDb.conversations.get(conversationId);
+  // Check cache first
+  if (isCacheValid(`conv:${conversationId}`)) {
+    const cached = conversationCache.get(conversationId);
+    if (cached) return cached;
+  }
+
+  const conversation = await chatDb.conversations.get(conversationId);
+  if (conversation) {
+    setCache(conversationCache, conversationId, conversation);
+  }
+  return conversation;
 }
 
 /**
@@ -384,6 +437,8 @@ export async function deleteConversation(conversationId: string) {
       await chatDb.usageSnapshots.delete(conversationId);
     },
   );
+  // Invalidate cache
+  invalidateConversationCache(conversationId);
 }
 
 // ============================================================================
@@ -416,25 +471,43 @@ export async function saveMessage(message: StoredMessage) {
       if (existingConversation) {
         // Only increment count for brand-new messages, not streaming updates
         const increment = previouslySaved ? 0 : 1;
-        await chatDb.conversations.put({
+        const updated = {
           ...existingConversation,
           updatedAt: new Date().toISOString(),
           messageCount: existingConversation.messageCount + increment,
-        });
+        };
+        await chatDb.conversations.put(updated);
+        // Update cache
+        setCache(conversationCache, updated.id, updated);
       }
     },
   );
+  // Invalidate message cache for this conversation
+  messageCache.delete(message.conversationId);
+  cacheTimestamps.delete(`msg:${message.conversationId}`);
   return message;
 }
 
 /**
  * Retrieves all messages for a conversation, ordered by creation time.
+ * Uses in-memory cache for better performance.
  *
  * @param conversationId - The conversation to get messages for
  * @returns Array of messages, oldest first
  */
 export async function getMessages(conversationId: string) {
-  return chatDb.messages.where({ conversationId }).sortBy("createdAt");
+  // Check cache first
+  if (isCacheValid(`msg:${conversationId}`)) {
+    const cached = messageCache.get(conversationId);
+    if (cached) return cached;
+  }
+
+  const messages = await chatDb.messages
+    .where({ conversationId })
+    .sortBy("createdAt");
+  setCache(messageCache, conversationId, messages);
+  cacheTimestamps.set(`msg:${conversationId}`, Date.now());
+  return messages;
 }
 
 // ============================================================================

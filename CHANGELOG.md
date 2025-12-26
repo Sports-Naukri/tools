@@ -1,5 +1,53 @@
 # Changelog
 
+## 2.1.0-beta - 2025-06-24
+
+### Highlights
+- **Premium Toast Notifications:** Integrated Sonner v2.0.7 with custom light-themed styling for resume uploads and chat actions.
+- **Mobile-First Redesign:** Complete responsive overhaul with smooth sidebar animations, fullscreen canvas, and compact mobile header.
+- **IndexedDB Performance:** Added in-memory caching layer with 30-second TTL to eliminate UI sluggishness.
+- **Horizontal Scroll Fix:** Resolved overflow issues across all screen sizes with CSS containment.
+- **Enhanced SEO:** Added WebApplication structured data schema and expanded keyword coverage.
+
+### Performance
+- **In-memory caching layer** for IndexedDB operations with TTL-based invalidation (`storage.ts`).
+- **Fixed COOLDOWN_DURATION_MS** from 60 seconds to 12 hours (43,200,000ms) for proper rate limiting.
+- Optimized cache reads to reduce redundant database queries.
+
+### Mobile UX
+- **Mobile header** with hamburger menu toggle, new chat button, and delete conversation button.
+- **Smooth sidebar animation** using CSS transforms (`translate-x`) instead of conditional rendering.
+- **Fullscreen canvas** on mobile with back button navigation.
+- **Icon-only ResumeToggle** on mobile screens with `useIsMobile` hook.
+- **Compact ChatSidebar** with reduced padding and smaller search bar on mobile.
+- **Safe area inset padding** for iOS notch/home indicator compatibility.
+
+### UI/UX
+- **Sonner toast integration** throughout the app with custom styling matching brand colors.
+- **ModeButton component** with centered tooltip showing Jay/Navigator mode descriptions.
+- **Removed message counter** ("X messages left") from composer footer.
+- **Centered disclaimer text** in chat composer.
+- **SportsNaukri logo** replacing generic Bot icon in message list.
+- **Removed hamburger menu** from homepage header (CTA always visible).
+
+### SEO & Meta
+- **WebApplication schema** with aggregateRating, offers, and feature list.
+- **Expanded keywords** covering career tools, resume builder, job matching, AI chatbot.
+- **Added /chat to sitemap** with daily change frequency and high priority.
+
+### Bug Fixes
+- **Horizontal scrollbar** eliminated with `overflow-x: hidden !important` on html/body.
+- **Tooltip overflow** fixed with centered fixed positioning.
+- **Mobile viewport** using `h-dvh` for dynamic viewport height.
+- **Universal max-width** selector preventing element overflow.
+
+### Code Quality
+- Biome lint fixes across all modified files.
+- Removed unused mobile overlay and hamburger state from Header component.
+- Cleaned up conditional mobile rendering in favor of CSS transforms.
+
+---
+
 ## 2.0.0 - 2025-12-18
 
 ### Highlights

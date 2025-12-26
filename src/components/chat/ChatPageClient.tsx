@@ -18,7 +18,8 @@
 "use client";
 
 import { type UIMessage, useChat } from "@ai-sdk/react";
-import { Loader2 } from "lucide-react";
+import clsx from "clsx";
+import { Loader2, Menu, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   type CSSProperties,
@@ -28,6 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 
 import { CanvasPanel } from "@/components/canvas/CanvasPanel";
 import { ChatComposer, type ChatMode } from "@/components/chat/ChatComposer";
@@ -406,7 +408,7 @@ export function ChatPageClient({
   }
 
   return (
-    <div className="flex h-dvh min-h-screen w-full overflow-hidden bg-white">
+    <div className="flex h-dvh w-full overflow-hidden bg-white max-w-[100vw]">
       <div className="hidden h-full md:flex">
         <ChatSidebar
           usage={session.usage}
@@ -418,30 +420,42 @@ export function ChatPageClient({
         />
       </div>
 
-      {isMobileSidebarOpen && (
+      {/* Mobile Sidebar with smooth animation */}
+      <div
+        className={clsx(
+          "fixed inset-0 z-40 md:hidden transition-opacity duration-300",
+          isMobileSidebarOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
+        )}
+      >
+        {/* Backdrop */}
         <div
-          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] md:hidden"
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
           onClick={() => setIsMobileSidebarOpen(false)}
+        />
+        {/* Sidebar panel with slide animation */}
+        <div
+          className={clsx(
+            "absolute inset-y-0 left-0 w-[min(85vw,320px)] shadow-2xl transition-transform duration-300 ease-out",
+            isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
+          )}
+          onClick={(event) => event.stopPropagation()}
         >
-          <div
-            className="absolute inset-y-0 left-0 w-[min(92vw,360px)] shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <ChatSidebar
-              usage={session.usage}
-              conversations={history}
-              activeConversationId={session.conversation.id}
-              onNewChat={handleNewChat}
-              onSelectConversation={handleSelectConversation}
-              onDeleteConversation={handleDeleteConversation}
-              variant="mobile"
-              onClose={() => setIsMobileSidebarOpen(false)}
-            />
-          </div>
+          <ChatSidebar
+            usage={session.usage}
+            conversations={history}
+            activeConversationId={session.conversation.id}
+            onNewChat={handleNewChat}
+            onSelectConversation={handleSelectConversation}
+            onDeleteConversation={handleDeleteConversation}
+            variant="mobile"
+            onClose={() => setIsMobileSidebarOpen(false)}
+          />
         </div>
-      )}
+      </div>
 
-      <div className="flex-1">
+      <div className="flex-1 flex flex-col min-h-0">
         <ChatWorkspace
           session={session}
           onUsageChange={(usage) =>
@@ -453,6 +467,9 @@ export function ChatPageClient({
           refreshHistory={refreshHistory}
           onNewChat={handleNewChat}
           onOpenSidebar={() => setIsMobileSidebarOpen(true)}
+          onDeleteConversation={() =>
+            handleDeleteConversation(session.conversation.id)
+          }
           initialMessage={initialMessage}
         />
       </div>
@@ -470,6 +487,7 @@ type ChatWorkspaceProps = {
   refreshHistory: () => Promise<StoredConversation[]>;
   onNewChat: () => void;
   onOpenSidebar: () => void;
+  onDeleteConversation: () => void;
   initialMessage?: string;
 };
 
@@ -513,6 +531,8 @@ function ChatWorkspace({
   loadUsage,
   refreshHistory,
   onNewChat,
+  onOpenSidebar,
+  onDeleteConversation,
   initialMessage,
 }: ChatWorkspaceProps) {
   const [modelId, setModelId] = useState(
@@ -1440,6 +1460,20 @@ function ChatWorkspace({
   const documentCountRef = useRef(0);
   const lastDocumentIdRef = useRef<string | null>(null);
 
+  // Mobile detection for canvas auto-open behavior
+  const isMobileRef = useRef(
+    typeof window !== "undefined" && window.innerWidth < 768,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => {
+      isMobileRef.current = window.innerWidth < 768;
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   useEffect(() => {
     const docCount = canvasDocuments.length;
     const latest = docCount ? canvasDocuments[docCount - 1] : null;
@@ -1461,10 +1495,14 @@ function ChatWorkspace({
       return;
     }
 
-    // If a new document was added, ALWAYS switch to it and open the canvas
+    // If a new document was added, switch to it
+    // Only auto-open on desktop, not on mobile
     if (docCount > previousCount) {
       setActiveDocumentId(latest!.id);
-      setIsCanvasOpen(true);
+      // Auto-open canvas only on desktop (>= 768px)
+      if (!isMobileRef.current) {
+        setIsCanvasOpen(true);
+      }
       return;
     }
 
@@ -1497,12 +1535,27 @@ function ChatWorkspace({
     setSelectedJob(null);
   }, []);
 
+  // Track if we're on mobile for responsive workspace styling
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 768 : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth < 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // On desktop, apply padding when canvas is open. On mobile, canvas is fullscreen overlay.
   const workspaceStyle = useMemo<CSSProperties | undefined>(() => {
-    if (isCanvasOpen) {
+    if (isCanvasOpen && !isMobileView) {
       return { paddingRight: "min(640px, 50vw)" };
     }
     return undefined;
-  }, [isCanvasOpen]);
+  }, [isCanvasOpen, isMobileView]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -1790,6 +1843,11 @@ function ChatWorkspace({
           if (!allowedIdx) {
             errorMessage = "Resume upload limit reached (3/day).";
             setComposerError(errorMessage);
+            toast.error("Upload limit reached", {
+              description:
+                "You can upload up to 3 resumes per day. Try again tomorrow.",
+              duration: 4000,
+            });
             continue;
           }
 
@@ -1807,51 +1865,62 @@ function ChatWorkspace({
 
           setAttachments((prev) => [...prev, resumePreview]);
 
-          // Process Async
-          (async () => {
-            try {
-              // Parse
-              const parsed = await parseResumeFile(file);
-              // Extract
-              const response = await fetch("/api/resume/extract", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ rawText: parsed.text }),
-              });
+          // Process Async with toast
+          const uploadPromise = (async () => {
+            // Parse
+            const parsed = await parseResumeFile(file);
+            // Extract
+            const response = await fetch("/api/resume/extract", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ rawText: parsed.text }),
+            });
 
-              if (!response.ok) throw new Error("Extraction failed");
-              const data = await response.json();
-              if (!data.success || !data.profile) throw new Error(data.error);
+            if (!response.ok) throw new Error("Extraction failed");
+            const data = await response.json();
+            if (!data.success || !data.profile) throw new Error(data.error);
 
-              // Save
-              await saveProfile(data.profile);
-              await recordUpload(file.name);
-              await setContextEnabled(true);
+            // Save
+            await saveProfile(data.profile);
+            await recordUpload(file.name);
+            await setContextEnabled(true);
 
-              // Update the preview to show success
-              // We use isLocalOnly=true so it displays "Stored locally (resume)" and Check icon
-              setAttachments((prev) =>
-                prev.map((a) =>
-                  a.id === rId
-                    ? { ...a, status: "ready" as const, isLocalOnly: true }
-                    : a,
-                ),
-              );
-            } catch (err) {
-              console.error("Auto-resume upload failed:", err);
-              setAttachments((prev) =>
-                prev.map((a) =>
-                  a.id === rId
-                    ? {
-                        ...a,
-                        status: "error",
-                        error: "Resume extraction failed",
-                      }
-                    : a,
-                ),
-              );
-            }
+            // Update the preview to show success
+            // We use isLocalOnly=true so it displays "Stored locally (resume)" and Check icon
+            setAttachments((prev) =>
+              prev.map((a) =>
+                a.id === rId
+                  ? { ...a, status: "ready" as const, isLocalOnly: true }
+                  : a,
+              ),
+            );
+
+            return data.profile;
           })();
+
+          toast.promise(uploadPromise, {
+            loading: "Analyzing your resume...",
+            success: (profile) =>
+              profile?.name
+                ? `Welcome, ${profile.name}! Your profile is ready.`
+                : "Resume uploaded successfully!",
+            error: "Failed to process resume. Please try again.",
+          });
+
+          uploadPromise.catch((err) => {
+            console.error("Auto-resume upload failed:", err);
+            setAttachments((prev) =>
+              prev.map((a) =>
+                a.id === rId
+                  ? {
+                      ...a,
+                      status: "error",
+                      error: "Resume extraction failed",
+                    }
+                  : a,
+              ),
+            );
+          });
 
           continue; // Skip standard attachment upload
         }
@@ -2001,6 +2070,84 @@ function ChatWorkspace({
       className={`flex flex-1 flex-col h-full relative chat-area-bg ${className ?? ""}`}
       style={workspaceStyle}
     >
+      {/* Mobile Header - only visible on small screens */}
+      <header className="flex md:hidden items-center justify-between px-4 py-3 border-b border-slate-100 bg-white/80 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={onOpenSidebar}
+          className="p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="flex items-center gap-2">
+          <svg
+            viewBox="0 0 1000 1000"
+            width={22}
+            height={22}
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <g>
+              <polygon
+                fill="#654E9F"
+                points="302,245.7 302.6,251.5 302.4,257.4 418.1,257.1 427.8,251.2 417.7,245.4"
+              />
+              <polygon
+                fill="#654E9F"
+                points="490.9,308.2 493.3,367.6 513,367.5 510.6,308.1"
+              />
+              <path
+                fill="#6D28D9"
+                d="M497.6,6.3L76,249.9l421.5,243.6l421.5-243.6L497.6,6.3z M550,383c-1,1.3-2.3,2.5-4.1,3.6
+                c-1.8,1.1-3.7,1.9-5.8,2.6s-4.5,0.9-7.2,1l-57.7,0.3c-2.7,0-5.2-0.3-7.3-0.9c-2.2-0.6-4.2-1.4-6-2.5c-1.9-1.1-3.3-2.2-4.4-3.5
+                c-1.1-1.3-1.6-2.7-1.7-4.4l-3.2-82.5c-0.1-1.6,0.4-3.1,1.4-4.3c1-1.3,2.3-2.5,4.1-3.5c1.8-1.1,3.7-1.9,5.8-2.5s4.5-0.9,7.2-0.9
+                l57.5-0.2c2.7,0,5.1,0.3,7.3,0.9c2.2,0.6,4.2,1.4,6,2.5c1.8,1.1,3.3,2.2,4.4,3.5c1.1,1.3,1.6,2.7,1.7,4.3l3.4,82.3
+                C551.4,380.2,551,381.7,550,383z M675.7,302.9c-5.2,3.2-11.2,5.7-18.1,7.5c-6.9,1.8-14.1,2.7-21.7,2.7l-1.5-34.1l-37.6,0.1
+                l-0.7-16.8l-139.7,0.4l-27.8,17L284,280c-2.7,0-5.3-0.3-7.6-0.8c-2.3-0.5-4.4-1.3-6.2-2.4s-3.3-2.3-4.4-3.7
+                c-1.1-1.4-1.6-2.9-1.7-4.5l-1.1-33.9c-0.1-1.6,0.4-3.1,1.4-4.5c1-1.4,2.4-2.7,4.2-3.7c1.8-1.1,3.8-1.9,6.1-2.4
+                c2.3-0.5,4.8-0.8,7.5-0.8l144.1-0.2l29.4,17l23,0l-2.6-66l-19.7-11.4l-1.9-48.2l75.9,0.1l2,48.1l-18.7,11.4l2.7,65.9l78.1-0.2
+                l-0.8-17.2l37.5-0.1l-38.9-22.5l-0.5-11.2l94.9-0.1l0.5,11.1l-36.7,22.5l37.4-0.1L691,279c0.2,4.5-1,8.8-3.6,12.9
+                C684.8,296,680.9,299.7,675.7,302.9z"
+              />
+              <path
+                d="M963.7,324.3L539.2,562.8l3,430.3l424.5-238.5L963.7,324.3z M861.1,731.2l-53.5,25.9l-80.9-133.6l-28.9,186.7L650,833.2
+                l39.4-262.5l53.2-27.5l81.2,135.6l32.5-194.3l52.1-26.9L861.1,731.2z"
+              />
+              <path
+                fill="#006DFF"
+                d="M32.5,754.7L457,993.1l3-430.3L35.5,324.3L32.5,754.7z M158.6,691.9c22.5,37.5,42.9,60.7,64.5,74
+                c31.3,19.3,50.6,14.6,50.6-13.9c0-15.8-7.4-32.7-24.7-47.9l-31.4-27.6c-36.1-31.5-52.4-67.9-52.4-100.3c0-58.9,32.1-80.9,91.4-42.4
+                c30,19.5,56.7,50.3,77.7,86.4l-21.6,26c-15.7-26.6-36.2-51.1-55.8-63.7c-28.5-18.4-44.9-12.6-44.9,12.9c0,15.9,8.6,30.1,25.9,45.5
+                l31.5,27.9c34.3,30.4,50,69.5,50,101.2c0.1,66.7-38.4,80.2-102,41.4c-32.4-19.7-61.9-53.3-81.7-93.2L158.6,691.9z"
+              />
+            </g>
+          </svg>
+          <span className="text-sm font-semibold text-slate-800">
+            SportsNaukri
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onNewChat}
+            className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            aria-label="New chat"
+          >
+            <Plus className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={onDeleteConversation}
+            className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            aria-label="Delete conversation"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
+        </div>
+      </header>
+
       <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
         <MessageList
           messages={displayMessages}

@@ -29,7 +29,7 @@ export const GLOBAL_MESSAGE_LIMIT = 40;
  *
  * @constant {number} 12 hours in milliseconds
  */
-export const COOLDOWN_DURATION_MS = 60 * 1000;
+export const COOLDOWN_DURATION_MS = 12 * 60 * 60 * 1000;
 
 // ============================================================================
 // Model Configuration

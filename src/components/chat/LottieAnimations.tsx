@@ -58,10 +58,10 @@ export function DocumentGeneratingAnimation() {
       />
       <div>
         <p className="text-sm font-medium text-slate-700">
-          <span className="inline-block min-w-[180px]">
+          <span className="inline-block min-w-45">
             Creating your document
           </span>
-          <span className="inline-block w-[24px] text-left animate-pulse">
+          <span className="inline-block w-6 text-left animate-pulse">
             ...
           </span>
         </p>
@@ -87,10 +87,10 @@ export function JobSearchingAnimation() {
       />
       <div>
         <p className="text-sm font-medium text-slate-700">
-          <span className="inline-block min-w-[200px]">
+          <span className="inline-block min-w-50">
             Searching for opportunities
           </span>
-          <span className="inline-block w-[24px] text-left animate-pulse">
+          <span className="inline-block w-6 text-left animate-pulse">
             ...
           </span>
         </p>

@@ -11,6 +11,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,12 +32,44 @@ const siteUrl = "https://tools.sportsnaukri.com";
 const organizationSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
+  name: "SportsNaukri",
+  url: "https://sportsnaukri.com",
+  logo: `${siteUrl}/favicon.ico`,
+  description: "India's leading sports job portal",
+  sameAs: [
+    "https://sportsnaukri.com",
+    "https://twitter.com/sportsnaukri",
+    "https://www.linkedin.com/company/sportsnaukri",
+  ],
+};
+
+const webAppSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
   name: siteName,
   url: siteUrl,
-  logo: `${siteUrl}/favicon.ico`,
   description: siteDescription,
-  sameAs: ["https://sportsnaukri.com"],
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Any",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "INR",
+  },
+  featureList: [
+    "AI-powered resume builder",
+    "Sports job search",
+    "Career guidance",
+    "Cover letter generator",
+    "Interview preparation",
+  ],
+  author: {
+    "@type": "Organization",
+    name: "SportsNaukri",
+  },
 };
+
+const structuredDataArray = [organizationSchema, webAppSchema];
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -48,11 +81,17 @@ export const metadata: Metadata = {
   applicationName: siteName,
   keywords: [
     "sports careers",
-    "AI assistant",
-    "resume builder",
-    "job discovery",
+    "sports jobs India",
+    "AI resume builder",
+    "sports job portal",
     "SportsNaukri",
     "career navigator",
+    "sports industry jobs",
+    "athlete careers",
+    "sports marketing jobs",
+    "coaching jobs India",
+    "fitness industry careers",
+    "sports management jobs",
   ],
   authors: [{ name: "SportsNaukri" }],
   creator: "SportsNaukri",
@@ -108,7 +147,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const structuredData = JSON.stringify(organizationSchema);
+  const structuredData = JSON.stringify(structuredDataArray);
 
   return (
     <html lang="en">
@@ -123,6 +162,40 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} hero-bg bg-background text-foreground antialiased overflow-x-hidden font-sans text-gray-800`}
       >
         {children}
+        <Toaster
+          position="top-center"
+          expand={false}
+          richColors={false}
+          closeButton={false}
+          duration={3500}
+          gap={12}
+          toastOptions={{
+            style: {
+              background: "white",
+              border: "1px solid #e2e8f0",
+              boxShadow:
+                "0 10px 25px -5px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.03)",
+              padding: "14px 18px",
+              borderRadius: "14px",
+              fontSize: "14px",
+              fontWeight: 500,
+              fontFamily: "Inter, sans-serif",
+              gap: "10px",
+            },
+            classNames: {
+              toast: "!items-start",
+              title: "!text-slate-800 !font-semibold !text-[14px]",
+              description: "!text-slate-500 !text-[13px] !font-normal",
+              success:
+                "!border-emerald-100 !bg-gradient-to-br !from-white !to-emerald-50/50",
+              error:
+                "!border-red-100 !bg-gradient-to-br !from-white !to-red-50/50",
+              loading:
+                "!border-blue-100 !bg-gradient-to-br !from-white !to-blue-50/30",
+              icon: "!text-[18px]",
+            },
+          }}
+        />
         <Analytics />
         <SpeedInsights />
       </body>

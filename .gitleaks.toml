@@ -1,0 +1,4 @@
+title = "SportsNaukri tools gitleaks config"
+
+[allow_list]
+files = ["^\.next/"]

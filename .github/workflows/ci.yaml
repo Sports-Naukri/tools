@@ -144,11 +144,20 @@ jobs:
             cat audit.json
             exit 1
           fi
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
       - name: Install Gitleaks (OSS)
         run: |
-          VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)
-          ARCHIVE="gitleaks_${VERSION#v}_linux_x64.tar.gz"
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/${VERSION}/${ARCHIVE}" -o gitleaks.tar.gz
+          set -euo pipefail
+          RELEASE_INFO=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest)
+          DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name | test("linux_x64\\.tar\\.gz$")) | .browser_download_url')
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Unable to resolve linux_x64 asset download URL"
+            exit 1
+          fi
+          curl -fsSL "$DOWNLOAD_URL" -o gitleaks.tar.gz
           tar -xzf gitleaks.tar.gz gitleaks
           sudo mv gitleaks /usr/local/bin/gitleaks
       - name: Secret scan (Gitleaks CLI)

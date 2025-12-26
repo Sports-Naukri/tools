@@ -33,8 +33,6 @@ jobs:
   ci:
     name: CI (Lint, Typecheck, Build, Security)
     runs-on: ubuntu-latest
-    env:
-      NODE_ENV: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,6 +58,8 @@ jobs:
       - name: Run tsc
         run: pnpm exec tsc --noEmit --pretty
       - name: Build Next.js (verifies serverless/API routes)
+        env:
+          NODE_ENV: production
         run: pnpm build
       - name: Install jq
         run: |

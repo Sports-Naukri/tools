@@ -7,6 +7,7 @@
  * - Scroll locking when menu is open
  * - Smooth scrolling to specific sections ("Scroll" button)
  * - Responsiveness handlers (closing menu on resize)
+ * - Dynamic imports for heavy framer-motion components
  *
  * @module components/HomePageClient
  */
@@ -14,15 +15,30 @@
 "use client";
 
 import Lenis from "lenis";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { CTASection } from "@/components/CTASection";
-import { FeatureGrid } from "@/components/FeatureGrid";
-import { FloatingSearch } from "@/components/FloatingSearch";
 import { Header } from "@/components/Header";
-import { HeroSection } from "@/components/HeroSection";
 import { SiteFooter } from "@/components/SiteFooter";
 import type { NavLink } from "@/lib/siteContent";
+
+// Dynamic imports for framer-motion heavy components to reduce initial bundle
+const HeroSection = dynamic(
+  () => import("@/components/HeroSection").then((mod) => mod.HeroSection),
+  { ssr: true },
+);
+const FeatureGrid = dynamic(
+  () => import("@/components/FeatureGrid").then((mod) => mod.FeatureGrid),
+  { ssr: true },
+);
+const CTASection = dynamic(
+  () => import("@/components/CTASection").then((mod) => mod.CTASection),
+  { ssr: true },
+);
+const FloatingSearch = dynamic(
+  () => import("@/components/FloatingSearch").then((mod) => mod.FloatingSearch),
+  { ssr: false },
+);
 
 type HomePageClientProps = {
   navLinks: NavLink[];

@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.1.1-beta - 2025-06-24
+
+### Highlights
+- **Bundle Size Optimization:** Dynamic imports for heavy framer-motion and lottie-react components reduce initial JavaScript payload.
+- **Agent Mode UX:** Added manual mode tracking with inline confirmation banner when auto-switch is triggered.
+- **Mobile Viewport Fix:** Prevents address bar collapse on mobile with `interactiveWidget: "resizes-content"`.
+- **Improved System Prompts:** Enhanced differentiation between Jay (documents/coaching) and Navigator (analysis/mapping) agents.
+
+### Performance
+- **Dynamic imports** for homepage components (HeroSection, FeatureGrid, CTASection, FloatingSearch) using `next/dynamic`.
+- **Lazy-loaded Lottie animations** in MessageList - only loads lottie-react when streaming starts.
+- **Optimized Lenis settings** with adjusted `wheelMultiplier` and `touchMultiplier` for smoother scroll.
+- **Added `overscroll-behavior: none`** to prevent pull-to-refresh interference.
+
+### UX Improvements
+- **Manual mode tracking:** System remembers when user explicitly selects Jay or Navigator mode.
+- **Confirmation banner:** Shows inline prompt when auto-classifier suggests different agent for manual selections.
+- **Fixed tooltip positioning:** Mode toggle tooltip now appears above button instead of screen center.
+- **Improved agent system prompts:** Clear domain boundaries with "NOT your domain" sections for accurate routing.
+
+### Mobile
+- **Viewport meta enhancement:** Added `interactiveWidget: "resizes-content"` to prevent layout shifts from mobile browser chrome.
+- **Disabled zoom:** Set `maximumScale: 1` and `userScalable: false` for app-like behavior.
+
+### CI/CD
+- **Consolidated CI workflow:** Merged lint/typecheck/build/security into single parallel job.
+- **Removed gitleaks:** Eliminated secret scanning step causing config parsing issues.
+- **Fixed NODE_ENV:** Moved production environment to build step only to allow devDependency installation.
+
+---
+
 ## 2.1.0-beta - 2025-06-24
 
 ### Highlights

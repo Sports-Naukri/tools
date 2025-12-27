@@ -26,6 +26,7 @@ import {
   User,
   Zap,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -40,10 +41,39 @@ import type { ChatSuggestion } from "@/lib/chat/types";
 import { JOB_SEARCH_TOOL_NAME } from "@/lib/jobs/tools";
 import type { Job, JobResponse } from "@/lib/jobs/types";
 import { JobList } from "./JobCard";
-import {
-  DocumentGeneratingAnimation,
-  JobSearchingAnimation,
-} from "./LottieAnimations";
+
+// Dynamic imports for Lottie animations to reduce initial bundle
+const DocumentGeneratingAnimation = dynamic(
+  () =>
+    import("./LottieAnimations").then((mod) => mod.DocumentGeneratingAnimation),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-4 py-3">
+        <div className="w-14 h-14 bg-slate-200 rounded-lg animate-pulse" />
+        <div className="space-y-2">
+          <div className="w-40 h-4 bg-slate-200 rounded animate-pulse" />
+          <div className="w-32 h-3 bg-slate-200 rounded animate-pulse" />
+        </div>
+      </div>
+    ),
+  },
+);
+const JobSearchingAnimation = dynamic(
+  () => import("./LottieAnimations").then((mod) => mod.JobSearchingAnimation),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-4 py-3">
+        <div className="w-14 h-14 bg-slate-200 rounded-lg animate-pulse" />
+        <div className="space-y-2">
+          <div className="w-44 h-4 bg-slate-200 rounded animate-pulse" />
+          <div className="w-36 h-3 bg-slate-200 rounded animate-pulse" />
+        </div>
+      </div>
+    ),
+  },
+);
 
 export type MessageListProps = {
   messages: ToolAwareMessage[];

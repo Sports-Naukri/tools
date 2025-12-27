@@ -3,13 +3,20 @@
  *
  * Reusable wrapper for Lottie JSON animations.
  * Used for specific loading states like "Job Searching" and "Document Generating".
+ * Uses dynamic import for lottie-react to reduce initial bundle size.
  *
  * @module components/chat/LottieAnimations
  */
 
 "use client";
 
-import Lottie from "lottie-react";
+import dynamic from "next/dynamic";
+
+// Dynamic import lottie-react to reduce initial bundle (only loaded when streaming)
+const Lottie = dynamic(() => import("lottie-react").then((mod) => mod.default), {
+  ssr: false,
+  loading: () => <div className="animate-pulse bg-slate-200 rounded-lg" />,
+});
 
 // Import JSON animations from public folder
 import documentAnimationData from "../../../public/document-generating.json";

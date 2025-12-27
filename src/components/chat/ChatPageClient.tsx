@@ -553,12 +553,29 @@ function ChatWorkspace({
           : "jay") as ChatMode),
   );
 
+  // Track if user manually selected a mode (to avoid overriding their choice)
+  const [userManuallySelectedMode, setUserManuallySelectedMode] =
+    useState(false);
+
+  // Pending agent switch suggestion (shown as confirmation banner)
+  const [pendingAgentSwitch, setPendingAgentSwitch] = useState<{
+    suggestedMode: ChatMode;
+    reason: string;
+  } | null>(null);
+
   // Persist mode changes to sessionStorage
-  const handleModeChange = useCallback((newMode: ChatMode) => {
-    setMode(newMode);
-    modeRef.current = newMode;
-    sessionStorage.setItem("sn-chat-mode", newMode);
-  }, []);
+  const handleModeChange = useCallback(
+    (newMode: ChatMode, isManual = false) => {
+      setMode(newMode);
+      modeRef.current = newMode;
+      sessionStorage.setItem("sn-chat-mode", newMode);
+      if (isManual) {
+        setUserManuallySelectedMode(true);
+        setPendingAgentSwitch(null); // Clear any pending suggestion
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     modeRef.current = mode;
@@ -1619,19 +1636,29 @@ function ChatWorkspace({
       }
 
       // Auto-select the best agent before sending to avoid wrong-tab UX.
+      // But respect user's manual selection - show confirmation instead of forcing switch.
       const { mode: preferredMode, reason: modeReason } = classifyAgentMode(
         trimmed,
         { hasJobContext: Boolean(selectedJob) },
       );
       if (preferredMode !== mode) {
-        handleModeChange(preferredMode);
-        setAutoSwitchMessage(
-          preferredMode === "navigator"
-            ? `Switched to Navigator (${modeReason}).`
-            : `Switched to Jay (${modeReason}).`,
-        );
-        // Clear the notice after a short delay
-        setTimeout(() => setAutoSwitchMessage(null), 4000);
+        if (userManuallySelectedMode) {
+          // User manually selected - show suggestion instead of auto-switching
+          setPendingAgentSwitch({
+            suggestedMode: preferredMode,
+            reason: modeReason,
+          });
+        } else {
+          // Auto-switch since user hasn't manually selected
+          handleModeChange(preferredMode);
+          setAutoSwitchMessage(
+            preferredMode === "navigator"
+              ? `Switched to Navigator (${modeReason}).`
+              : `Switched to Jay (${modeReason}).`,
+          );
+          // Clear the notice after a short delay
+          setTimeout(() => setAutoSwitchMessage(null), 4000);
+        }
       }
 
       // Clear the composer immediately so the user sees the message was sent,
@@ -1702,12 +1729,20 @@ function ChatWorkspace({
       if (args.mode && (args.mode === "jay" || args.mode === "navigator")) {
         // Only switch if we aren't already in that mode
         if (args.mode !== mode) {
-          console.log(`🔄 [Auto-Switch] Changing mode to ${args.mode}`);
-          handleModeChange(args.mode);
+          if (userManuallySelectedMode) {
+            // User manually selected - show suggestion instead of forcing
+            setPendingAgentSwitch({
+              suggestedMode: args.mode,
+              reason: "LLM recommendation",
+            });
+          } else {
+            console.log(`🔄 [Auto-Switch] Changing mode to ${args.mode}`);
+            handleModeChange(args.mode);
+          }
         }
       }
     }
-  }, [messages, mode, handleModeChange]);
+  }, [messages, mode, handleModeChange, userManuallySelectedMode]);
 
   const handleSubmit = useCallback(
     (e?: React.FormEvent) => {
@@ -2177,6 +2212,41 @@ function ChatWorkspace({
       </div>
 
       <div className="w-full">
+        {pendingAgentSwitch && (
+          <div className="mx-auto mb-2 max-w-3xl px-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-sm flex items-center justify-between gap-2">
+              <span>
+                💡{" "}
+                <strong>
+                  {pendingAgentSwitch.suggestedMode === "navigator"
+                    ? "Navigator"
+                    : "Jay"}
+                </strong>{" "}
+                might be better for this ({pendingAgentSwitch.reason}). Tap ⓘ on
+                the mode button to learn more.
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleModeChange(pendingAgentSwitch.suggestedMode);
+                    setPendingAgentSwitch(null);
+                  }}
+                  className="px-2 py-1 text-[10px] font-medium bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors"
+                >
+                  Switch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingAgentSwitch(null)}
+                  className="px-2 py-1 text-[10px] font-medium bg-white text-amber-700 border border-amber-300 rounded hover:bg-amber-100 transition-colors"
+                >
+                  Keep {mode === "jay" ? "Jay" : "Navigator"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {autoSwitchMessage && (
           <div className="mx-auto mb-2 max-w-3xl px-4">
             <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700 shadow-sm">
@@ -2213,7 +2283,7 @@ function ChatWorkspace({
           hasErroredAttachments={hasErroredAttachments}
           onRetryAttachment={handleRetryAttachment}
           mode={mode}
-          onModeChange={handleModeChange}
+          onModeChange={(newMode) => handleModeChange(newMode, true)}
           onResumeToggleChange={() => {
             void refreshResumeContext();
           }}

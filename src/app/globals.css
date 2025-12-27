@@ -44,6 +44,12 @@
     width: 100%;
   }
 
+  /* Prevent mobile browser address bar from hiding on scroll */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
   /* Prevent any element from causing horizontal scroll */
   *,
   *::before,

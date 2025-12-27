@@ -94,6 +94,7 @@ function ModeButton({
   dotColor: "yellow" | "red";
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
+  const buttonRef = useRef<HTMLDivElement>(null);
   const isActive = mode === currentMode;
 
   const dotColorClass =
@@ -115,7 +116,10 @@ function ModeButton({
         : "text-slate-500 hover:text-slate-700";
 
   return (
-    <div className="relative inline-flex items-center rounded-md bg-white/90 px-2 py-1 shadow-sm ring-1 ring-black/5">
+    <div
+      className="relative inline-flex items-center rounded-md bg-white/90 px-2 py-1 shadow-sm ring-1 ring-black/5"
+      ref={buttonRef}
+    >
       <button
         type="button"
         onClick={onClick}
@@ -141,15 +145,7 @@ function ModeButton({
       </button>
 
       {showTooltip && (
-        <div
-          className="fixed left-4 right-4 mx-auto max-w-50 top-auto bottom-auto z-100 p-2 text-[10px] leading-relaxed text-slate-600 bg-white rounded-lg shadow-lg border border-slate-200"
-          style={{
-            position: "fixed",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-          }}
-        >
+        <div className="absolute left-0 bottom-full mb-2 w-48 z-50 p-2 text-[10px] leading-relaxed text-slate-600 bg-white rounded-lg shadow-lg border border-slate-200">
           <div className="font-medium text-slate-800 mb-1">{label}</div>
           {tooltip}
         </div>
@@ -295,7 +291,7 @@ export function ChatComposer({
               currentMode={mode}
               onClick={() => onModeChange("jay")}
               label="Jay"
-              tooltip="Creative AI assistant for resumes, cover letters & documents"
+              tooltip="Career coach for resumes, cover letters, interview prep & career advice"
               dotColor="yellow"
             />
             <ModeButton
@@ -303,7 +299,7 @@ export function ChatComposer({
               currentMode={mode}
               onClick={() => onModeChange("navigator")}
               label="Navigator"
-              tooltip="Job search expert - finds relevant sports industry opportunities"
+              tooltip="Career path analyst - skill mapping, gap analysis & job matching"
               dotColor="red"
             />
           </div>

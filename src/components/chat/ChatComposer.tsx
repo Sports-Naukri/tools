@@ -32,6 +32,7 @@ import {
   type KeyboardEvent,
   useRef,
   useState,
+  useEffect,
 } from "react";
 
 import { CHAT_MODELS } from "@/lib/chat/constants";
@@ -95,7 +96,44 @@ function ModeButton({
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const buttonRef = useRef<HTMLDivElement>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number } | null>(null);
   const isActive = mode === currentMode;
+
+  // Compute tooltip fixed position to avoid clipping by overflow-hidden ancestors.
+  useEffect(() => {
+    if (!showTooltip) {
+      setTooltipPos(null);
+      return;
+    }
+
+    function updatePos() {
+      const el = buttonRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const tooltipWidth = 192; // w-48 = 12rem = 192px
+      const tooltipHeight = 64; // approximate height
+
+      let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - tooltipWidth - 8));
+
+      let top = rect.top - tooltipHeight - 8;
+      if (top < 8) {
+        // If not enough room above, place below the button
+        top = rect.bottom + 8;
+      }
+
+      setTooltipPos({ left, top });
+    }
+
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    // capture scrolls in ancestors
+    window.addEventListener("scroll", updatePos, true);
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+    };
+  }, [showTooltip]);
 
   const dotColorClass =
     dotColor === "yellow"
@@ -145,7 +183,16 @@ function ModeButton({
       </button>
 
       {showTooltip && (
-        <div className="absolute left-0 bottom-full mb-2 w-48 z-50 p-2 text-[10px] leading-relaxed text-slate-600 bg-white rounded-lg shadow-lg border border-slate-200">
+        // Render tooltip with fixed positioning to avoid being clipped by overflow-hidden ancestors.
+        <div
+          role="tooltip"
+          className="fixed z-50 p-2 text-[10px] leading-relaxed text-slate-600 bg-white rounded-lg shadow-lg border border-slate-200 w-48"
+          style={
+            tooltipPos
+              ? { left: tooltipPos.left, top: tooltipPos.top }
+              : { left: 0, top: 0 }
+          }
+        >
           <div className="font-medium text-slate-800 mb-1">{label}</div>
           {tooltip}
         </div>
